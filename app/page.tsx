@@ -28,14 +28,14 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-type DisplayMessage = ChatMessage & { id: string; status?: ChatReply["status"] };
+type DisplayMessage = ChatMessage & { id: string; status?: ChatReply["status"]; failed?: boolean };
 const STORAGE_KEY = "liniya-workspace-v2";
 
 function restoreMessages(value: unknown, entries: KnowledgeEntry[]): DisplayMessage[] {
   if (!Array.isArray(value)) return [];
   const ids = new Set(entries.map((entry) => entry.id));
   return value.slice(-60).filter((item): item is DisplayMessage => Boolean(item && typeof item === "object" && (item.role === "user" || item.role === "assistant") && typeof item.content === "string" && item.content.length <= 6000 && typeof item.id === "string"))
-    .map((item) => ({ id: item.id, role: item.role, content: item.content, status: ["answered", "unknown", "clarification"].includes(item.status ?? "") ? item.status : undefined, sourceIds: Array.isArray(item.sourceIds) ? item.sourceIds.filter((id): id is string => typeof id === "string" && ids.has(id)).slice(0, 3) : [] }));
+    .map((item) => ({ id: item.id, role: item.role, content: item.content, failed: item.role === "user" && item.failed === true, status: ["answered", "unknown", "clarification"].includes(item.status ?? "") ? item.status : undefined, sourceIds: Array.isArray(item.sourceIds) ? item.sourceIds.filter((id): id is string => typeof id === "string" && ids.has(id)).slice(0, 3) : [] }));
 }
 
 export default function Home() {
@@ -139,19 +139,20 @@ export default function Home() {
     const text = question.trim();
     if (!text || pending) return;
     if (text.length > 2000) { setError("Questions must be shorter than 2,000 characters."); return; }
-    if (!knowledge.length) { setError("Add at least one answer to your knowledge base."); return; }
+    if (!knowledge.length) { setError("Your knowledge base is empty. Open Knowledge base and upload a .txt/.md file or add a company answer before sending a message."); return; }
     const userId = crypto.randomUUID();
     const sequence = ++requestSequence.current;
     request.current?.abort();
     const controller = new AbortController();
+    const deadline = AbortSignal.timeout(95_000);
     request.current = controller;
-    const history = messages.slice(-20).map(({ role, content, sourceIds }) => ({ role, content, sourceIds }));
+    const history = messages.filter((message) => !message.failed).slice(-20).map(({ role, content, sourceIds }) => ({ role, content, sourceIds }));
     setMessages((current) => [...current, { id: userId, role: "user", content: text }]);
     setInput("");
     setError("");
     setPending(true);
     try {
-      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text, history, knowledge }), signal: controller.signal });
+      const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text, history, knowledge }), signal: AbortSignal.any([controller.signal, deadline]) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not get an answer. Please try again.");
       if (typeof data.answer !== "string" || !Array.isArray(data.sources) || !["local", "llm"].includes(data.mode)) throw new Error("The server returned an invalid answer.");
@@ -164,9 +165,9 @@ export default function Home() {
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: reply.answer, sourceIds: reply.sources.map((source) => source.id), status: reply.status }]);
     } catch (cause) {
       if (sequence !== requestSequence.current || controller.signal.aborted) return;
-      setMessages((current) => current.filter((message) => message.id !== userId));
+      setMessages((current) => current.map((message) => message.id === userId ? { ...message, failed: true } : message));
       setInput((current) => current || text);
-      setError(cause instanceof Error ? cause.message : "Could not send the message.");
+      setError(deadline.aborted ? "The reply took too long. Check the cloud API connection and try again." : cause instanceof Error ? cause.message : "Could not send the message.");
     } finally {
       if (sequence === requestSequence.current) { setPending(false); messageInput.current?.focus({ preventScroll: true }); }
     }
@@ -248,7 +249,7 @@ export default function Home() {
 
           {storageWarning && <div className="notice warning" role="status">{storageWarning}</div>}
           {notice && <div className="notice success" role="status"><Icon name="check" size={17} />{notice}<button className="icon-button" onClick={() => setNotice("")} aria-label="Dismiss notification"><Icon name="close" size={16} /></button></div>}
-          {error && <div className="notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="Dismiss error"><Icon name="close" size={16} /></button></div>}
+          {error && tab !== "chat" && <div className="notice error" role="alert">{error}<button className="icon-button" onClick={() => setError("")} aria-label="Dismiss error"><Icon name="close" size={16} /></button></div>}
 
           {tab === "chat" ? <>
             <div className="context-strip"><span><Icon name="book" size={16} /><strong>{knowledge.length}</strong> knowledge entries</span><span><span className="language-dot" />English</span><span className="context-mode"><span className={mode === "llm" && modelReady === true && !statusFailed ? "status-dot green" : "status-dot"} />{modeLabel}</span></div>
@@ -259,10 +260,10 @@ export default function Home() {
                   <div className="conversation-start">START OF CONVERSATION</div>
                   <div className="message-row assistant"><span className="message-avatar"><Icon name="wave" size={16} /></span><div className="message-body"><div className="message-name">Assistant</div><div className="message-bubble">{knowledge.length ? "Hello! Ask me about the company information in your knowledge base." : "Welcome! Upload your company information or add an answer to give your support agent the knowledge it needs."}</div>{!knowledge.length && <button className="text-link empty-knowledge-link" onClick={() => setTab("knowledge")}>Add company information <Icon name="chevron" size={14} /></button>}</div></div>
 
-                  {messages.map((message) => <div className={`message-row ${message.role}`} key={message.id}>{message.role === "assistant" && <span className="message-avatar"><Icon name="wave" size={16} /></span>}<div className="message-body"><div className="message-name">{message.role === "user" ? "You · customer" : "Assistant"}{message.status === "unknown" && <span className="unknown-tag">No answer in the knowledge base</span>}</div><div className="message-bubble">{message.content}</div>{message.sourceIds && message.sourceIds.length > 0 && <div className="message-sources"><span>Answer sources</span>{message.sourceIds.map((id) => { const source = knowledge.find((item) => item.id === id); return source ? <button key={id} onClick={() => { setTab("knowledge"); setExpanded(id); setSearch(""); }}><Icon name="file" size={13} />{source.title}<Icon name="chevron" size={12} /></button> : null; })}</div>}</div></div>)}
+                  {messages.map((message) => <div className={`message-row ${message.role}`} key={message.id}>{message.role === "assistant" && <span className="message-avatar"><Icon name="wave" size={16} /></span>}<div className="message-body"><div className="message-name">{message.role === "user" ? "You · customer" : "Assistant"}{message.failed && <span className="unknown-tag">Not answered</span>}{message.status === "unknown" && <span className="unknown-tag">No answer in the knowledge base</span>}</div><div className="message-bubble">{message.content}</div>{message.sourceIds && message.sourceIds.length > 0 && <div className="message-sources"><span>Answer sources</span>{message.sourceIds.map((id) => { const source = knowledge.find((item) => item.id === id); return source ? <button key={id} onClick={() => { setTab("knowledge"); setExpanded(id); setSearch(""); }}><Icon name="file" size={13} />{source.title}<Icon name="chevron" size={12} /></button> : null; })}</div>}</div></div>)}
                   {pending && <div className="message-row assistant"><span className="message-avatar"><Icon name="wave" size={16} /></span><div className="message-body"><div className="message-name">Assistant</div><div className="message-bubble typing" role="status" aria-label="Preparing an answer"><i /><i /><i /><span className="sr-only">Preparing an answer…</span></div></div></div>}
                 </div>
-                <form className="chat-composer" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}><div className="composer-field"><textarea ref={messageInput} aria-label="Customer message" placeholder="Ask a question as a customer…" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKey} maxLength={2000} rows={2} disabled={!hydrated} /><button className="send-button" type="submit" disabled={!input.trim() || pending || !hydrated || !knowledge.length} aria-label="Send message"><Icon name="arrow" size={20} /></button></div><div className="composer-hint"><span>Enter to send<span className="desktop-hint"> · Shift + Enter for a new line</span></span><span>{input.length > 1700 ? `${input.length}/2000` : "Test conversation"}</span></div></form>
+                <form className="chat-composer" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>{error && <div className="notice error chat-send-error" role="alert"><span>{error}</span><button type="button" className="icon-button" onClick={() => setError("")} aria-label="Dismiss error"><Icon name="close" size={16} /></button></div>}{hydrated && !knowledge.length && <p className="composer-empty-note" id="chat-knowledge-required" role="status">Your knowledge base is empty. Add company information to enable answers. <button type="button" className="text-link" onClick={() => { setTab("knowledge"); setError(""); }}>Open knowledge base</button></p>}<div className="composer-field"><textarea ref={messageInput} aria-label="Customer message" aria-describedby={!knowledge.length ? "chat-knowledge-required" : undefined} placeholder="Ask a question as a customer…" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKey} maxLength={2000} rows={2} disabled={!hydrated} /><button className="send-button" type="submit" disabled={!input.trim() || pending || !hydrated} aria-label="Send message"><Icon name="arrow" size={20} /></button></div><div className="composer-hint"><span>Enter to send<span className="desktop-hint"> · Shift + Enter for a new line</span></span><span>{input.length > 1700 ? `${input.length}/2000` : "Test conversation"}</span></div></form>
               </section>
               <aside className="insights-panel">
                 <section className="knowledge-preview"><div className="section-kicker"><Icon name="book" size={18} />KNOWLEDGE BASE</div><h2>Accurate answers,<br />from your information.</h2><p>Upload your company information to give your agent the facts it needs.</p><div className="preview-entries">{knowledge.slice(0, 4).map((entry) => <button key={entry.id} onClick={() => { setTab("knowledge"); setExpanded(entry.id); setSearch(""); }}><span className="file-icon"><Icon name="file" size={17} /></span><span>{entry.title}</span><Icon name="chevron" size={13} /></button>)}{!knowledge.length && <p>No information yet. Upload a document or add your first answer.</p>}</div><button className="text-link" onClick={() => setTab("knowledge")}>Open knowledge base <Icon name="chevron" size={14} /></button></section>

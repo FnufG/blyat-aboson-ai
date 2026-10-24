@@ -5,6 +5,42 @@ async function upload(page: Page, content: string) {
   await page.getByLabel("Upload knowledge base file").setInputFiles({name:"company.md",mimeType:"text/markdown",buffer:Buffer.from(content)});
 }
 
+test("an empty workspace explains why a typed message cannot be answered", async ({ page }) => {
+  let chatRequests=0;
+  page.on("request", request => { if(new URL(request.url()).pathname === "/api/chat") chatRequests++; });
+  await page.goto("/");
+  await expect(page.getByText("Your knowledge base is empty. Add company information to enable answers.", {exact:false})).toBeVisible();
+  const input=page.getByRole("textbox",{name:"Customer message"});
+  await input.fill("When is support available?");
+  const send=page.getByRole("button",{name:"Send message",exact:true});
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(page.getByRole("alert").filter({hasText:"Your knowledge base is empty"})).toBeVisible();
+  await expect(input).toHaveValue("When is support available?");
+  expect(chatRequests).toBe(0);
+  await page.locator(".composer-empty-note").getByRole("button",{name:"Open knowledge base",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Add answer",exact:true})).toBeVisible();
+});
+
+test("a failed API request explains the failure next to the restored question", async ({ page }) => {
+  // This only exercises the failure UI; no successful model answer is fabricated.
+  await page.setViewportSize({width:1100,height:620});
+  await page.route("**/api/chat", route=>route.fulfill({status:502,contentType:"application/json",body:JSON.stringify({error:"The cloud API limit was reached. Check your API billing and quota."})}));
+  await page.goto("/");
+  await upload(page,"## When are you open?\n\nDaily from 09:00 to 18:00.");
+  await page.getByRole("button",{name:"Test chat",exact:true}).click();
+  const input=page.getByRole("textbox",{name:"Customer message"});
+  await input.fill("When are you open?");
+  await page.getByRole("button",{name:"Send message",exact:true}).click();
+  const error=page.locator(".chat-composer").getByRole("alert");
+  await expect(error).toContainText("billing and quota");
+  await expect(error).toBeInViewport();
+  await expect(input).toHaveValue("When are you open?");
+  await expect(page.getByRole("button",{name:"Send message",exact:true})).toBeEnabled();
+  await expect(page.getByRole("log")).toContainText("When are you open?");
+  await expect(page.getByRole("log")).toContainText("Not answered");
+});
+
 test("starts empty without demo questions, then answers only uploaded information", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");

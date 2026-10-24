@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from urllib.parse import urlparse
 from livekit import rtc
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, AutoSubscribe, cli, llm
@@ -14,6 +15,69 @@ from .schemas import AnswerRequest, HistoryMessage, SessionRequest
 from .store import SessionStore
 
 logger = logging.getLogger("liniya.voice")
+
+ANSWER_ERRORS = {
+    "missing_llm_key": "Set LLM_API_KEY in .env.local and restart the application.",
+    "invalid_llm_config": "Check the language model URL and model name in .env.local.",
+    "provider_auth": "The language model rejected access. Check LLM_API_KEY and model permissions.",
+    "provider_quota": "The language model API limit was reached. Check API billing and quota.",
+    "provider_timeout": "The language model timed out. Please try again.",
+    "provider_unavailable": "The language model is temporarily unavailable. Please try again.",
+    "invalid_model_reply": "The model did not return a verified answer with sources. Please rephrase your question.",
+    "knowledge_too_large": "The matching instructions are too long. Split them into shorter sections.",
+}
+
+
+async def publish_voice_error(room, *, code: str, stage: str, message: str):
+    """Report only fixed public messages, never provider exception text or audio."""
+    try:
+        await asyncio.wait_for(room.local_participant.publish_data(
+            json.dumps({"error": message, "code": code, "stage": stage}).encode("utf8"),
+            reliable=True, topic="liniya.error",
+        ), timeout=3)
+    except Exception:
+        # A disconnected data channel must not replace the original error or leak
+        # an SDK URL/token through exception formatting.
+        logger.warning("Could not deliver voice diagnostic (%s)", code)
+
+
+class VoiceDiagnostics:
+    """Forward SDK speech failures to the UI, including failure of the greeting."""
+    def __init__(self, session, room, *, voice_provider: str):
+        self.room = room
+        self.voice_provider = voice_provider
+        self.pending: set[asyncio.Task] = set()
+        self.last_sent: dict[str, float] = {}
+        session.on("error", self.on_error)
+        session.on("user_transcription_timeout", self.on_transcription_timeout)
+
+    def queue(self, *, code: str, stage: str, message: str):
+        now = time.monotonic()
+        if now - self.last_sent.get(code, float("-inf")) < 3:
+            return
+        self.last_sent[code] = now
+        task = asyncio.create_task(publish_voice_error(self.room, code=code, stage=stage, message=message))
+        self.pending.add(task)
+        task.add_done_callback(self.pending.discard)
+
+    def on_error(self, event):
+        kind = getattr(getattr(event, "error", None), "type", None)
+        if kind == "stt_error":
+            self.queue(code="speech_recognition_failed", stage="speech_recognition", message="Speech recognition failed. Check the speech service and try a short question in English.")
+        elif kind == "tts_error":
+            message = "Boson could not produce speech. Check BOSON_API_KEY, the selected voice/model and API access." if self.voice_provider == "boson" else "The test voice could not produce audio. Check the speech service logs."
+            self.queue(code="speech_output_failed", stage="speech_output", message=message)
+        elif kind in ("llm_error", "realtime_model_error"):
+            self.queue(code="provider_unavailable", stage="answer_generation", message=ANSWER_ERRORS["provider_unavailable"])
+
+    def on_transcription_timeout(self, event):
+        self.queue(code="speech_not_transcribed", stage="speech_recognition", message="Speech was detected, but no transcript was received. Check your microphone and try a short question in English.")
+
+    async def aclose(self):
+        tasks = list(self.pending)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 class SupportAgent(Agent):
@@ -39,8 +103,9 @@ class SupportAgent(Agent):
             self.last_sources = [item.id for item in reply.sources]
             await self.room.local_participant.publish_data(json.dumps({"sources": [source.model_dump() for source in reply.sources], "status": reply.status}, ensure_ascii=False).encode("utf8"), reliable=True, topic="liniya.sources")
             yield reply.answer
-        except AnswerUnavailable:
-            await self.room.local_participant.publish_data(json.dumps({"error": "The language model is temporarily unavailable."}).encode("utf8"), reliable=True, topic="liniya.error")
+        except AnswerUnavailable as error:
+            code = error.code if error.code in ANSWER_ERRORS else "provider_unavailable"
+            await publish_voice_error(self.room, code=code, stage="answer_generation", message=ANSWER_ERRORS[code])
             yield "I could not prepare a verified answer right now. Please try asking your question again."
 
 
@@ -84,20 +149,24 @@ async def entrypoint(ctx: JobContext):
         SessionStore().delete(ctx.room.name)
         return
     config = model_config()
+    speech = SupportTTS()
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
         stt=FasterWhisperSTT(),
         llm=openai.LLM(base_url=config["base"], api_key=config["key"], model=config["model"]),
-        tts=SupportTTS(),
+        tts=speech,
         turn_detection="vad",
         min_endpointing_delay=0.45,
         max_endpointing_delay=2.0,
         allow_interruptions=True,
         min_interruption_duration=0.35,
         resume_false_interruption=True,
+        transcription_timeout=8.0,
     )
+    diagnostics = VoiceDiagnostics(session, ctx.room, voice_provider=speech.mode)
     async def cleanup():
         SessionStore().delete(ctx.room.name)
+        await diagnostics.aclose()
         await session.aclose()
 
     ctx.add_shutdown_callback(cleanup)

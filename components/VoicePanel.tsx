@@ -50,6 +50,7 @@ function LiveConversation({ onError, knowledge }: { onError: (message: string) =
   const transcriptions = useTranscriptions();
   const [agentDelayed, setAgentDelayed] = useState(false);
   const [modelError, setModelError] = useState("");
+  const [errorStage, setErrorStage] = useState("answer_generation");
   const [lastSources, setLastSources] = useState<KnowledgeEntry[] | null>(null);
   const [answerStatus, setAnswerStatus] = useState<"answered" | "unknown" | "clarification" | null>(null);
 
@@ -59,6 +60,7 @@ function LiveConversation({ onError, knowledge }: { onError: (message: string) =
       const data: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(message.payload));
       if (!data || typeof data !== "object" || !("error" in data) || typeof data.error !== "string" || !data.error.trim() || data.error.length > 2000) return;
       setModelError(data.error.trim());
+      setErrorStage("stage" in data && ["speech_recognition", "speech_output", "answer_generation"].includes(String(data.stage)) ? String(data.stage) : "answer_generation");
       setLastSources(null);
       setAnswerStatus(null);
     } catch { /* Ignore malformed messages without interrupting the audio connection. */ }
@@ -128,7 +130,7 @@ function LiveConversation({ onError, knowledge }: { onError: (message: string) =
       <div className="voice-connection-details"><span className={connectionState === ConnectionState.Connected ? "connected" : ""}>Connection: {connectionState === ConnectionState.Connected ? "connected" : "connecting"}</span><span>Microphone: {isMicrophoneEnabled ? "on" : "off"}</span></div>
     </div>
     {agentDelayed && <div className="notice warning" role="status">The audio connection is active, but the agent has not joined yet. You can wait or end the conversation and try again.</div>}
-    {modelError && <div className="notice warning voice-model-warning" role="alert"><span><strong>Could not prepare an answer.</strong> {modelError} Please repeat your question.</span></div>}
+    {modelError && <div className="notice warning voice-model-warning" role="alert"><span><strong>{errorStage === "speech_recognition" ? "Could not recognize your speech." : errorStage === "speech_output" ? "Could not play speech." : "Could not prepare an answer."}</strong> {modelError} Please repeat your question.</span></div>}
     <div className="voice-controls">
       <TrackToggle source={Track.Source.Microphone} showIcon onDeviceError={(cause) => onError(microphoneError(cause))} className="voice-microphone-button">{isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"}</TrackToggle>
       <DisconnectButton stopTracks className="voice-disconnect-button">End conversation</DisconnectButton>
@@ -258,6 +260,7 @@ export default function VoicePanel({ knowledge }: { knowledge: KnowledgeEntry[] 
       {activeProvider === "test" && <div className="voice-provider-note">The conversation currently uses the local test voice. Add your Boson configuration to use Boson speech.</div>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {notice && <div className="notice success" role="status">{notice}</div>}
+      {!session && !statusLoading && status && !status.ready && <div className="notice warning voice-start-blocker" role="status"><strong>Voice is unavailable.</strong> {status.missing[0] || status.details || "Check the service connection below."}</div>}
       {!knowledge.length && <div className="notice warning" role="status">Add your company information in Knowledge base before starting a voice conversation.</div>}
       {!secureContext && <div className="notice warning" role="status">Microphone access requires HTTPS or localhost. Open the app in a secure context.</div>}
       {session ? <LiveKitRoom key={session.roomName} serverUrl={session.serverUrl} token={session.participantToken} connect audio={{ echoCancellation: true, noiseSuppression: true, autoGainControl: true }} video={false} className="voice-livekit" data-lk-theme="default" onDisconnected={handleDisconnected} onError={handleRoomError} onMediaDeviceFailure={handleMediaFailure}>
