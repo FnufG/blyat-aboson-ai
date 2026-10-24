@@ -1,0 +1,38 @@
+services:
+  liniya:
+    build: .
+    platform: linux/amd64
+    init: true
+    environment:
+      LIVEKIT_BIND_ADDRESS: 0.0.0.0
+      LIVEKIT_NODE_IP: 127.0.0.1
+      LIVEKIT_PUBLIC_URL: ws://127.0.0.1:7880
+      ESPEAK_BINARY: /usr/bin/espeak-ng
+    # Optional server credentials are runtime-only and are never build arguments.
+    env_file:
+      - path: .env.local
+        required: false
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:7880:7880"
+      - "127.0.0.1:7881:7881"
+      - "127.0.0.1:50000-50100:50000-50100/udp"
+    volumes:
+      - local-data:/app/.local
+    cpus: 4.0
+    mem_limit: 10g
+    shm_size: 256m
+    stop_grace_period: 45s
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/voice/status', {signal: AbortSignal.timeout(12000)}).then(async r => {if (!r.ok || !(await r.json()).ready) process.exit(1)}).catch(() => process.exit(1))"
+      start_period: 30m
+      interval: 30s
+      timeout: 15s
+      retries: 3
+
+volumes:
+  local-data:

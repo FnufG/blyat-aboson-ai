@@ -1,0 +1,44 @@
+{
+  "name": "liniya-support",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "node scripts/web.mjs dev",
+    "build": "next build --webpack",
+    "start": "node scripts/web.mjs start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "smoke": "node scripts/smoke.mjs",
+    "voice:setup": "voice/.venv/bin/python scripts/voice-stack.py setup",
+    "voice:models": "voice/.venv/bin/python scripts/voice-stack.py models",
+    "voice:up": "voice/.venv/bin/python scripts/voice-stack.py up",
+    "voice:down": "voice/.venv/bin/python scripts/voice-stack.py down",
+    "voice:status": "voice/.venv/bin/python scripts/voice-stack.py status",
+    "voice:web": "voice/.venv/bin/python scripts/voice-stack.py web",
+    "voice:test": "voice/.venv/bin/python -m pytest voice/tests -q",
+    "mvp": "npm run voice:up && npm run voice:web",
+    "voice:web-up": "voice/.venv/bin/python scripts/voice-stack.py web-up"
+  },
+  "dependencies": {
+    "@livekit/components-react": "^2.9.24",
+    "@livekit/components-styles": "^1.2.0",
+    "livekit-client": "^2.23.0",
+    "livekit-server-sdk": "^2.19.2",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "5.0.5"
+  }
+}

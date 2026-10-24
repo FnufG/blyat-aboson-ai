@@ -1,0 +1,42 @@
+{
+  "qwen": {
+    "repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+    "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+    "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
+  },
+  "whisper": {
+    "repo": "Systran/faster-whisper-base",
+    "revision": "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66",
+    "sha256": {
+      "model.bin": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9"
+    }
+  },
+  "piper": {
+    "repo": "rhasspy/piper-voices",
+    "revision": "5041a7a49ae5b3a0f30e6837769eb03fdbb231bd",
+    "voice": "ru_RU-denis-medium",
+    "purpose": "Synthetic local test input only",
+    "dataset_license": "CC0",
+    "files": {
+      "ru_RU-denis-medium.onnx": {
+        "file": "ru/ru_RU/denis/medium/ru_RU-denis-medium.onnx",
+        "sha256": "15fab56e11a097858ee115545d0f697fc2a316c41a291a5362349fb870411b0a",
+        "bytes": 63201294,
+        "authoritative_lfs_sha256": "15fab56e11a097858ee115545d0f697fc2a316c41a291a5362349fb870411b0a"
+      },
+      "ru_RU-denis-medium.onnx.json": {
+        "file": "ru/ru_RU/denis/medium/ru_RU-denis-medium.onnx.json",
+        "sha256": "831c860dac0b5073eaa81610a0a638ec23d90a6cf8e5f871b4485c2cec3767c8",
+        "bytes": 4823,
+        "authoritative_lfs_sha256": null
+      },
+      "MODEL_CARD": {
+        "file": "ru/ru_RU/denis/medium/MODEL_CARD",
+        "sha256": "8b5d685dd80f8ad3f8dbbe1c56b16bb0809f00c144af3642dbcf3b707eb89c12",
+        "bytes": 276,
+        "authoritative_lfs_sha256": null
+      }
+    }
+  }
+}

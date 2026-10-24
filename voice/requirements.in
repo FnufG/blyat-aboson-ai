@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+livekit-agents[openai,silero]
+faster-whisper
+llama-index-core
+llama-index-retrievers-bm25
+llama-index-llms-openai-like
+httpx
+pytest
+pytest-asyncio
+python-dotenv
+piper-tts==1.8.0
