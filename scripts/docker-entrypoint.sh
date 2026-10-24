@@ -32,7 +32,7 @@ mkdir -p .local/bin .local/pids
 cp /opt/liniya/livekit-server .local/bin/livekit-server
 chmod 755 .local/bin/livekit-server
 rm -f .local/pids/*.json
-printf '%s\n' 'Preparing speech recognition. Cloud mode downloads about 150 MB on first start; later starts reuse this volume.'
+printf '%s\n' 'Preparing local Qwen and speech recognition. First setup downloads about 1.3 GB; later starts reuse this volume.'
 run_step setup
 if ! run_step up; then
   printf '%s\n' 'Voice services are not ready. The web interface will still start so you can edit knowledge and inspect readiness.'

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { answerQuestion, ProviderError } from "../lib/answer";
+import { answerQuestion, modelConfig, ProviderError } from "../lib/answer";
 import { UNKNOWN_ANSWER } from "../lib/retrieval";
 import type { ChatRequest } from "../lib/types";
 import { testKnowledge } from "./fixtures";
@@ -66,5 +66,14 @@ describe("shared text and voice model broker", () => {
     vi.stubGlobal("fetch",vi.fn().mockRejectedValue(new Error("private-network-debug")));
     await expect(answerQuestion(request)).rejects.toBeInstanceOf(ProviderError);
     await expect(answerQuestion(request)).rejects.not.toThrow("private-network-debug");
+  });
+});
+
+
+describe("local model defaults", () => {
+  it("selects Qwen without requiring a cloud key", () => {
+    vi.stubEnv("LLM_BACKEND", ""); vi.stubEnv("LLM_BASE_URL", ""); vi.stubEnv("LLM_MODEL", "");
+    vi.stubEnv("LLM_API_KEY", "leftover-cloud-key");
+    expect(modelConfig()).toEqual({backend:"local",baseUrl:"http://127.0.0.1:11434/v1",model:"qwen2.5:1.5b"});
   });
 });

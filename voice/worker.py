@@ -17,6 +17,7 @@ from .store import SessionStore
 logger = logging.getLogger("liniya.voice")
 
 ANSWER_ERRORS = {
+    "local_model_unavailable": "The local model is not ready. Wait for Qwen to load and try again.",
     "missing_llm_key": "Set LLM_API_KEY in .env.local and restart the application.",
     "invalid_llm_config": "Check the language model URL and model name in .env.local.",
     "provider_auth": "The language model rejected access. Check LLM_API_KEY and model permissions.",

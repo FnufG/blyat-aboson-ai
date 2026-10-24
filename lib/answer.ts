@@ -2,16 +2,18 @@ import type { ChatReply, ChatRequest, KnowledgeEntry } from "./types";
 import { contextualMatches, UNKNOWN_ANSWER } from "./retrieval";
 
 export function modelConfig() {
+  const backend = process.env.LLM_BACKEND || "local";
   return {
-    backend: process.env.LLM_BACKEND || "cloud",
-    baseUrl: process.env.LLM_BASE_URL || "https://api.openai.com/v1",
-    model: process.env.LLM_MODEL || "gpt-4.1-mini"
+    backend,
+    baseUrl: process.env.LLM_BASE_URL || (backend === "cloud" ? "https://api.openai.com/v1" : "http://127.0.0.1:11434/v1"),
+    model: process.env.LLM_MODEL || (backend === "cloud" ? "gpt-4.1-mini" : "qwen2.5:1.5b")
   };
 }
 export class ProviderError extends Error {}
 const SAFE_ERRORS: Record<string, string> = {
+  local_model_unavailable: "The local model is not ready. Wait for Qwen to load and check the service logs.",
   missing_llm_key: "Set LLM_API_KEY in .env.local and restart the application.",
-  invalid_llm_config: "Check LLM_BASE_URL and LLM_MODEL in the server configuration. A cloud API requires HTTPS.",
+  invalid_llm_config: "Check LLM_BASE_URL and LLM_MODEL. Local mode must use the local model address.",
   provider_auth: "The cloud model rejected access. Check LLM_API_KEY and model permissions.",
   provider_quota: "The cloud API limit was reached. Check your API billing and quota.",
   provider_timeout: "The language model timed out. Please try again.",
@@ -30,11 +32,11 @@ export async function answerQuestion(request: ChatRequest): Promise<ChatReply> {
       response = await fetch(`${process.env.VOICE_API_URL || "http://127.0.0.1:8001"}/answer`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request), signal: AbortSignal.timeout(90_000)
       });
-    } catch { throw new ProviderError("The answer service is unavailable. Check the application logs and cloud API configuration."); }
+    } catch { throw new ProviderError("The answer service is unavailable. Check the application logs and model configuration."); }
     if (!response.ok) {
       let code = "";
       try { code = (await response.json()).code; } catch { /* Never expose raw provider responses. */ }
-      throw new ProviderError(SAFE_ERRORS[code] || "The answer service could not respond. Check the cloud API configuration and try again.");
+      throw new ProviderError(SAFE_ERRORS[code] || "The answer service could not respond. Check the model configuration and try again.");
     }
     try {
       const result = await response.json();

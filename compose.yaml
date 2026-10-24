@@ -4,6 +4,10 @@ services:
     platform: linux/amd64
     init: true
     environment:
+      # The local distribution intentionally overrides old cloud settings in .env.local.
+      LLM_BACKEND: local
+      LLM_BASE_URL: http://127.0.0.1:11434/v1
+      LLM_MODEL: qwen2.5:1.5b
       LIVEKIT_BIND_ADDRESS: 0.0.0.0
       LIVEKIT_NODE_IP: 127.0.0.1
       LIVEKIT_PUBLIC_URL: ws://127.0.0.1:7880

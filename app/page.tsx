@@ -167,7 +167,7 @@ export default function Home() {
       if (sequence !== requestSequence.current || controller.signal.aborted) return;
       setMessages((current) => current.map((message) => message.id === userId ? { ...message, failed: true } : message));
       setInput((current) => current || text);
-      setError(deadline.aborted ? "The reply took too long. Check the cloud API connection and try again." : cause instanceof Error ? cause.message : "Could not send the message.");
+      setError(deadline.aborted ? (modelEngine === "local" ? "The local model took too long to reply. Check the service logs and try again." : "The reply took too long. Check the cloud API connection and try again.") : cause instanceof Error ? cause.message : "Could not send the message.");
     } finally {
       if (sequence === requestSequence.current) { setPending(false); messageInput.current?.focus({ preventScroll: true }); }
     }

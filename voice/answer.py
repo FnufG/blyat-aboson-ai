@@ -21,8 +21,8 @@ class AnswerUnavailable(RuntimeError):
 
 
 def model_config() -> dict:
-    backend = "local" if os.environ.get("LLM_BACKEND") == "local" else "cloud"
-    key = os.environ.get("LLM_API_KEY", "").strip()
+    backend = "cloud" if os.environ.get("LLM_BACKEND", "local") == "cloud" else "local"
+    key = os.environ.get("LLM_API_KEY", "").strip() if backend == "cloud" else "local"
     base = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434/v1" if backend == "local" else "https://api.openai.com/v1").rstrip("/")
     try:
         parsed = urlsplit(base)
@@ -30,6 +30,8 @@ def model_config() -> dict:
             raise ValueError()
     except ValueError:
         raise AnswerUnavailable("LLM_BASE_URL must be an HTTPS API address (HTTP is allowed only for a local server).", "invalid_llm_config") from None
+    if backend == "local" and parsed.hostname not in ("127.0.0.1", "localhost", "::1"):
+        raise AnswerUnavailable("Local mode requires a loopback LLM_BASE_URL. Start the local model and use http://127.0.0.1:11434/v1.", "invalid_llm_config")
     return {
         "backend": backend,
         "base": base,
@@ -99,7 +101,9 @@ def retrieve(request: AnswerRequest) -> list[KnowledgeEntry]:
     return sources
 
 
-def provider_error(status: int | None = None) -> AnswerUnavailable:
+def provider_error(status: int | None = None, backend: str = "cloud") -> AnswerUnavailable:
+    if backend == "local":
+        return AnswerUnavailable("The local language model is not ready. Wait for Qwen to load and try again.", "local_model_unavailable")
     if status in (401, 403):
         return AnswerUnavailable("The cloud provider rejected the API key or model access. Check LLM_API_KEY and your account permissions.", "provider_auth")
     if status == 429:
@@ -120,9 +124,9 @@ async def model_health() -> dict:
     except AnswerUnavailable as exc:
         return {"ready": False, "reason": str(exc)}
     except httpx.HTTPStatusError as exc:
-        return {"ready": False, "reason": str(provider_error(exc.response.status_code))}
+        return {"ready": False, "reason": str(provider_error(exc.response.status_code, cfg["backend"]))}
     except Exception:
-        return {"ready": False, "reason": "The language model service is unavailable. Check the API settings and connection."}
+        return {"ready": False, "reason": "The local model service is unavailable. Wait for Qwen to load and check the service logs." if cfg["backend"] == "local" else "The language model service is unavailable. Check the API settings and connection."}
 
 
 async def answer_question(request: AnswerRequest) -> AnswerReply:
@@ -175,13 +179,13 @@ async def answer_question(request: AnswerRequest) -> AnswerReply:
             response.raise_for_status()
             output = json.loads(response.json()["choices"][0]["message"]["content"])
     except httpx.HTTPStatusError as exc:
-        raise provider_error(exc.response.status_code) from None
+        raise provider_error(exc.response.status_code, cfg["backend"]) from None
     except httpx.TimeoutException:
         raise AnswerUnavailable("The language model timed out. Please try again.", "provider_timeout") from None
     except (ValueError, KeyError, IndexError, TypeError):
         raise AnswerUnavailable("The model returned an invalid response. Please clarify your question.", "invalid_model_reply") from None
     except Exception:
-        raise provider_error() from None
+        raise provider_error(backend=cfg["backend"]) from None
     if not isinstance(output, dict):
         raise AnswerUnavailable("The model returned an invalid response. Please clarify your question.", "invalid_model_reply")
     status, answer, ids = output.get("status"), output.get("answer"), output.get("sourceIds")

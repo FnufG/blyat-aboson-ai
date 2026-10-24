@@ -1,40 +1,37 @@
 # Voice backend
 
-Local FastAPI and LiveKit Agents broker for an English support assistant. The default answer provider is a cloud OpenAI-compatible LLM. English Whisper recognition and Silero VAD remain local. LlamaIndex BM25 retrieves uploaded knowledge; Boson generates speech when configured, otherwise the labelled eSpeak English test voice is used.
+Local FastAPI and LiveKit Agents service for English support. By default llama.cpp/Qwen2.5-1.5B generates both text and voice answers. English Whisper and Silero VAD are local. LlamaIndex BM25 retrieves uploaded company knowledge. Boson generates speech when configured; otherwise explicitly labelled English eSpeak test speech is used.
 
 From the prepared project root:
 
 ```bash
+npm run voice:setup
 npm run voice:up
 npm run voice:status
 ```
 
-Cloud mode starts LiveKit, FastAPI and the worker; it does not start a local language model. Native generated LiveKit credentials are in ignored `.local/runtime.env`. Service ports are internal/loopback; this broker is not a public multi-tenant API.
+Local mode starts LiveKit, Qwen's server, FastAPI and the worker. Generated LiveKit credentials stay in ignored `.local/runtime.env`. This broker binds internally/loopback and is not a public multi-tenant API.
 
 ## Configuration
 
-- `LLM_BACKEND=cloud` (default), `LLM_API_KEY`, `LLM_BASE_URL=https://api.openai.com/v1`, `LLM_MODEL=gpt-4.1-mini` configure the shared text/voice answer service.
-- `LLM_BACKEND=local` explicitly enables a separately installed OpenAI-compatible local model, with a local URL/alias.
-- `WHISPER_MODEL_PATH` selects preinstalled weights; normal setup downloads and verifies the pinned Whisper base model.
-- `ESPEAK_BINARY` selects the test speech executable; speech uses English.
-- `BOSON_API_KEY` enables Boson, with optional `BOSON_BASE_URL`, `BOSON_MODEL`, `BOSON_VOICE`.
-- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` select the private RTC service. Next.js issues scoped participant tokens; browser clients never receive its administrative secret.
+- Default `LLM_BACKEND=local`, `LLM_BASE_URL=http://127.0.0.1:11434/v1`, `LLM_MODEL=qwen2.5:1.5b`. No cloud LLM key is required or used for local generation.
+- Docker pins these local settings, overriding old cloud values in `.env.local`. Native development respects explicit configuration, so update old native settings manually before setup.
+- `WHISPER_MODEL_PATH` selects preinstalled recognition weights; setup verifies the pinned model.
+- `ESPEAK_BINARY` selects the labelled English test voice executable.
+- `BOSON_API_KEY`, with optional base/model/voice settings, enables external speech synthesis. This remains separate from the local answer model.
+- LiveKit administrative credentials stay server-side; Next.js issues scoped participant tokens.
 
-Only runtime `.env.local` or securely bound environment variables should contain API keys. Missing/invalid cloud credentials appear as an actionable readiness or answer error, not fabricated fallback content. Provider readiness is separate from web-container health. A configured Boson key is not proof of a verified account (`bosonVerified=false`).
+Explicit native cloud development is optional and requires `LLM_BACKEND=cloud`, HTTPS provider URL, supported model and private key. The supplied Docker distribution remains local. Do not print credential files or commit keys.
 
 ## API
 
-- `GET /health`: LLM access/model configuration, Whisper, VAD, voice provider, LiveKit and worker readiness.
-- `POST /answer`: `{question, knowledge, history}` → `{answer, sources, status, mode:'llm'}`. Cloud requests use the same grounded English generation service for text and voice. Unknown questions abstain rather than inventing facts.
-- `POST /sessions`: `{knowledge, companyName?, language:'en'}` → `{roomName, agentName:'liniya-support', ttsMode}`. Requires ready services and nonempty knowledge.
-- `DELETE /sessions/{roomName}`: remove temporary room knowledge.
+- `GET /health`: local model, STT, VAD, output provider, LiveKit and worker readiness.
+- `POST /answer`: `{question,knowledge,history}` → `{answer,sources,status,mode:'llm'}` for the shared English answer service.
+- `POST /sessions`: `{knowledge,companyName?,language:'en'}` → room metadata; requires ready services and nonempty knowledge.
+- `DELETE /sessions/{roomName}` removes temporary room knowledge.
 
-Room knowledge lives in SQLite, is isolated per room and expires after one hour. The worker greets the browser participant, uses the shared AnswerService and publishes source/error topics. LiveKit controls speech turns and interruption. The current lexical retriever and source validation still need evaluation on real business material.
+Room knowledge is isolated in SQLite, expires after one hour and is cleaned up when sessions end. The worker uses the shared grounded answer function and publishes source/error topics. Speech recognition, answer-generation and speech-output errors use safe typed diagnostics. LiveKit handles turns and interruptions.
 
 ## Checks
 
-```bash
-npm run voice:test
-```
-
-Backend tests cover English retrieval, validation, room isolation, provider requests/errors and speech adapters using controlled external-service fixtures. They do not establish live OpenAI/Boson access or physical microphone quality. See the root README for an explicitly enabled live text smoke test. Legacy Russian Piper/local-Qwen synthetic scripts are disabled by default and are not the English cloud acceptance check.
+Run `npm run voice:test` for backend contracts and `npm run smoke` for a short real local-model text check. The smoke fixture is private validation data and is not seeded into the UI. Automated tests do not prove physical microphone acoustics or every provider account. Legacy Russian synthetic voice diagnostics remain disabled by default and are not acceptance tests for this English version.

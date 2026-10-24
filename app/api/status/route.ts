@@ -12,7 +12,7 @@ export async function GET() {
     if (response.ok) {
       const health = await response.json();
       ready = health.components?.llm?.ready === true;
-      reason = ready ? "" : "Check LLM_API_KEY, cloud API access and model availability in the server configuration.";
+      reason = ready ? "" : config.backend === "local" ? "The local model is starting or unavailable. Wait for Qwen to load and check the service logs." : "Check LLM_API_KEY, cloud API access and model availability in the server configuration.";
     }
   } catch { /* Configuration is separate from live readiness. */ }
   return NextResponse.json({ mode: "llm", engine: config.backend === "local" ? "local" : "cloud", model: config.model, ready, ...(reason ? { reason } : {}) }, { headers: { "Cache-Control": "no-store" } });

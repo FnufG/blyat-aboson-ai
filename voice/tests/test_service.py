@@ -237,3 +237,44 @@ def test_model_payload_uses_bounded_complete_sources(monkeypatch):
     assert "A" * 3800 in system
     assert sum(len(message["content"]) for message in captured[0]["messages"]) < 14000
     assert len(captured[0]["messages"]) == 3
+
+
+def test_default_local_model_ignores_leftover_cloud_key(monkeypatch):
+    for name in ["LLM_BACKEND", "LLM_BASE_URL", "LLM_MODEL"]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LLM_API_KEY", "leftover-cloud-key")
+    captured = []
+    def local(request):
+        captured.append(request)
+        assert request.url.host == "127.0.0.1"
+        assert request.url.port == 11434
+        assert request.headers["Authorization"] == "Bearer local"
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data":[{"id":"qwen2.5:1.5b"}]})
+        assert json.loads(request.content)["model"] == "qwen2.5:1.5b"
+        return completion()
+    mock_cloud(monkeypatch, local)
+    config = answers.model_config()
+    assert config["backend"] == "local" and config["key"] == "local"
+    assert asyncio.run(answers.model_health())["ready"] is True
+    reply = asyncio.run(answers.answer_question(question()))
+    assert reply.status == "answered" and reply.sources[0].id == "faq-4"
+    assert len(captured) == 2
+
+
+def test_local_mode_refuses_a_leftover_external_cloud_url(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "local")
+    monkeypatch.setattr(answers.httpx, "AsyncClient", lambda **kwargs: pytest.fail("Local mode must not contact a cloud endpoint"))
+    with pytest.raises(answers.AnswerUnavailable, match="loopback"):
+        answers.model_config()
+
+
+def test_local_model_failure_requests_local_startup_not_api_billing(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "local")
+    monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("LLM_MODEL", "qwen2.5:1.5b")
+    mock_cloud(monkeypatch, lambda request: httpx.Response(503))
+    with pytest.raises(answers.AnswerUnavailable) as error:
+        asyncio.run(answers.answer_question(question()))
+    assert error.value.code == "local_model_unavailable"
+    assert "Qwen" in str(error.value) and "billing" not in str(error.value)

@@ -38,7 +38,7 @@ def load_settings():
         for key, value in dotenv_values(path).items():
             if value is not None:
                 os.environ.setdefault(key, value)
-    os.environ.setdefault("LLM_BACKEND", "cloud")
+    os.environ.setdefault("LLM_BACKEND", "local")
     local = os.environ["LLM_BACKEND"] == "local"
     os.environ.setdefault("LLM_BASE_URL", "http://127.0.0.1:11434/v1" if local else "https://api.openai.com/v1")
     os.environ.setdefault("LLM_MODEL", "qwen2.5:1.5b" if local else "gpt-4.1-mini")
@@ -113,7 +113,10 @@ def install_nltk_data():
 def install_models():
     load_settings()
     install_nltk_data()
-    print("Preparing English speech recognition (Whisper base, about 150 MB). Cloud mode skips the local language model.", flush=True)
+    if os.environ["LLM_BACKEND"] == "local":
+        print("Preparing verified local models: Qwen about 1.1 GB and English Whisper about 150 MB. Previously downloaded weights are reused.", flush=True)
+    else:
+        print("Preparing English Whisper speech recognition, about 150 MB. Explicit cloud mode skips Qwen.", flush=True)
     os.environ.setdefault("HF_HOME", str(LOCAL / "huggingface"))
     os.environ.setdefault("HF_XET_CACHE", str(LOCAL / "huggingface/xet"))
     os.environ.setdefault("XDG_CACHE_HOME", str(LOCAL / "cache"))
