@@ -1,70 +1,40 @@
-# Локальный голосовой сервис
+# Voice backend
 
-Это отдельный backend для браузерного голосового прототипа. Готовые компоненты: LiveKit Agents (комната, аудиопотоки, прерывания), Silero VAD, faster-whisper, LlamaIndex BM25 + PyStemmer, локальный OpenAI-совместимый сервер языковой модели, eSpeak NG для тестовой речи. Boson подключается тонким HTTP/TTS-адаптером; реальные вызовы без ключа не выполняются.
+Local FastAPI and LiveKit Agents broker for an English support assistant. The default answer provider is a cloud OpenAI-compatible LLM. English Whisper recognition and Silero VAD remain local. LlamaIndex BM25 retrieves uploaded knowledge; Boson generates speech when configured, otherwise the labelled eSpeak English test voice is used.
 
-Запуск из корня проекта, с уже установленным `voice/.venv` и подготовленными моделями:
+From the prepared project root:
 
 ```bash
 npm run voice:up
 npm run voice:status
 ```
 
-Эта команда запускает LiveKit, LLM, API и worker с локальной конфигурацией. Для ручного запуска отдельных процессов требуются переменные из защищённого runtime-файла. Секреты LiveKit генерируются скриптом запуска окружения; не используйте публичные development credentials на доступном извне сервере.
+Cloud mode starts LiveKit, FastAPI and the worker; it does not start a local language model. Native generated LiveKit credentials are in ignored `.local/runtime.env`. Service ports are internal/loopback; this broker is not a public multi-tenant API.
 
-Основные переменные:
+## Configuration
 
-- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` — локальная комната и служебная авторизация.
-- `WHISPER_MODEL_PATH` — подготовленная faster-whisper модель; runtime её не скачивает.
-- `ESPEAK_BINARY` — путь к локальному eSpeak NG (по умолчанию поиск исполняемого файла в PATH).
-- `LLM_BASE_URL` — по умолчанию `http://127.0.0.1:11434/v1`.
-- `LLM_MODEL` — по умолчанию `qwen2.5:1.5b`. Совместимый локальный llama-server должен отдавать этот alias.
-- `BOSON_API_KEY` — включает Boson вместо явно обозначенного тестового голоса.
-- `BOSON_MODEL` — по умолчанию `higgs-audio-v3-tts`.
-- `BOSON_VOICE` — необязательный id голоса из аккаунта Boson; без значения используется серверный голос по умолчанию.
-- `BOSON_BASE_URL` — по умолчанию `https://api.boson.ai/v1`.
+- `LLM_BACKEND=cloud` (default), `LLM_API_KEY`, `LLM_BASE_URL=https://api.openai.com/v1`, `LLM_MODEL=gpt-4.1-mini` configure the shared text/voice answer service.
+- `LLM_BACKEND=local` explicitly enables a separately installed OpenAI-compatible local model, with a local URL/alias.
+- `WHISPER_MODEL_PATH` selects preinstalled weights; normal setup downloads and verifies the pinned Whisper base model.
+- `ESPEAK_BINARY` selects the test speech executable; speech uses English.
+- `BOSON_API_KEY` enables Boson, with optional `BOSON_BASE_URL`, `BOSON_MODEL`, `BOSON_VOICE`.
+- `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` select the private RTC service. Next.js issues scoped participant tokens; browser clients never receive its administrative secret.
 
-Если задан `LLM_API_KEY`, backend выбирает облачный LLM по умолчанию `https://api.openai.com/v1`, модель `gpt-4.1-mini`; при явных `LLM_BASE_URL` / `LLM_MODEL` используются они. Отдельный облачный ключ не требуется для локальной модели.
+Only runtime `.env.local` or securely bound environment variables should contain API keys. Missing/invalid cloud credentials appear as an actionable readiness or answer error, not fabricated fallback content. Provider readiness is separate from web-container health. A configured Boson key is not proof of a verified account (`bosonVerified=false`).
 
-## HTTP API (только loopback)
+## API
 
-- `GET /health` проверяет доступность конкретной LLM, загрузку локальных STT/VAD, наличие TTS, локальный LiveKit и HTTP-доступность worker. `ready=false` сохраняется, если обязательный компонент отсутствует. `bosonVerified=false` означает, что наличие ключа не доказывает работоспособность Boson.
-- `POST /answer` принимает `{question, knowledge, history}` и отдаёт `{answer, sources, status, mode:'llm'}`. Неизвестные модели устройств и вопросы без найденных сведений получают `unknown`; ошибки LLM остаются ошибками сервиса.
-- `POST /sessions` принимает `{knowledge, companyName?, language:'ru'}`. Возвращает `{roomName, agentName:'liniya-support', ttsMode}`. Не создаёт рабочую сессию при неготовом backend.
-- `DELETE /sessions/{roomName}` удаляет временные знания комнаты.
+- `GET /health`: LLM access/model configuration, Whisper, VAD, voice provider, LiveKit and worker readiness.
+- `POST /answer`: `{question, knowledge, history}` → `{answer, sources, status, mode:'llm'}`. Cloud requests use the same grounded English generation service for text and voice. Unknown questions abstain rather than inventing facts.
+- `POST /sessions`: `{knowledge, companyName?, language:'en'}` → `{roomName, agentName:'liniya-support', ttsMode}`. Requires ready services and nonempty knowledge.
+- `DELETE /sessions/{roomName}`: remove temporary room knowledge.
 
-Next.js выдаёт ограниченный LiveKit participant token и создаёт agent dispatch; клиент не получает служебный ключ. Знания лежат в локальной SQLite отдельно для каждой комнаты с TTL один час, а не в room metadata/JWT. Это не замена авторизации и долговременному хранилищу многопользовательской платформы.
+Room knowledge lives in SQLite, is isolated per room and expires after one hour. The worker greets the browser participant, uses the shared AnswerService and publishes source/error topics. LiveKit controls speech turns and interruption. The current lexical retriever and source validation still need evaluation on real business material.
 
-Worker сначала подключается к комнате и ждёт браузерного участника, затем здоровается. Для каждого вопроса он использует тот же AnswerService, что текстовый API, и публикует источники в data topic `liniya.sources`; ошибки модели — в `liniya.error`. Прерывания ведёт LiveKit, а не собственный аудиоплеер.
-
-Контекст локальной модели ограничен: полные источники — до 6000 символов, полные сообщения истории — до 4000, вопрос — до 2000. Источники не обрезаются в середине инструкции. Лексический BM25 не заменяет оценку качества поиска; ссылки не гарантируют фактическую правильность сгенерированного ответа.
-
-## Проверки
+## Checks
 
 ```bash
-voice/.venv/bin/python -m pytest voice/tests -q
-ESPEAK_BINARY=.local/espeak/bin/espeak-ng voice/.venv/bin/python scripts/voice-audio-check.py
+npm run voice:test
 ```
 
-`voice-audio-check.py` передаёт настоящую локально синтезированную речь между двумя WebRTC-участниками и проверяет ненулевой PCM и детекцию речи Silero. Эта отдельная проверка **не проверяет** распознавание Whisper, генерацию LLM или реальный Boson. Для полного голосового сценария обязательны установленные модели и отдельный end-to-end прогон через worker.
-
-После установки весов доступна отдельная проверка настоящей локальной цепочки:
-
-```bash
-voice/.venv/bin/python scripts/voice-conversation-check.py
-```
-
-Она синтезирует русский вопрос готовым Piper Denis (CC0), действительно распознаёт его faster-whisper, ищет знания через LlamaIndex и получает ответ от запущенной LLM, затем синтезирует ответ. Проверяются источник гарантии и срок 12 месяцев, отказ на неизвестной модели и переключение темы на контакты. Никаких подставных STT/LLM-ответов в скрипте нет. При неготовом `/health` команда выводит недостающие компоненты и завершается с кодом **2**, а не успешным «пропуском». Реальная ошибка проверки даёт код **1**. Наличие `BOSON_API_KEY` отменяет запуск: эта команда предназначена для локальной озвучки и не вызывает платный Boson.
-
-Этот компонентный прогон не проверяет маршрутизацию реплик внутри worker, перебивания, акустику живого пользователя и разрешения браузера. Они требуют отдельного разговорного теста через интерфейс после готовности моделей. WebRTC/VAD проверяются предыдущим скриптом.
-
-
-Полная проверка через worker, без подставных STT/LLM-ответов:
-
-```bash
-voice/.venv/bin/python scripts/voice-worker-check.py
-node scripts/browser-voice-check.mjs
-```
-
-Входные тестовые реплики создаются `voice.test_speech` (Piper Denis, закреплённые SHA256 и ревизия). Это настоящий синтетический PCM, который действительно обрабатывает Whisper. Исходящий голос приложения выбирается отдельно: eSpeak без ключа или Boson с ключом. Данные NLTK для LlamaIndex устанавливаются заранее из официальных архивов с проверкой SHA256; runtime не должен пытаться обходить защиту загрузчика.
-
-Локальная Qwen использует принудительную JSON Schema: допустимые статусы и id источников ограничены на этапе декодирования. Сервер повторно проверяет ответ и сохраняет отказ при неверных источниках. Для альтернативного облачного провайдера требуется поддержка `response_format: json_schema`, а не только JSON mode.
+Backend tests cover English retrieval, validation, room isolation, provider requests/errors and speech adapters using controlled external-service fixtures. They do not establish live OpenAI/Boson access or physical microphone quality. See the root README for an explicitly enabled live text smoke test. Legacy Russian Piper/local-Qwen synthetic scripts are disabled by default and are not the English cloud acceptance check.

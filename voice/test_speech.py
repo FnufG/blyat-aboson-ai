@@ -32,9 +32,9 @@ def _voice():
     config = VOICE_DIR / f"{VOICE_NAME}.onnx.json"
     for path, expected in ((model, VOICE_SHA256), (config, CONFIG_SHA256)):
         if not path.is_file():
-            raise RuntimeError("Синтетический тестовый голос не установлен. Выполните npm run voice:models.")
+            raise RuntimeError("The synthetic test voice is not installed. Install the optional Piper fixture first.")
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
-            raise RuntimeError("Контрольная сумма тестового голоса не совпала. Переустановите модель.")
+            raise RuntimeError("The test voice checksum does not match. Reinstall the model.")
     options = onnxruntime.SessionOptions()
     options.intra_op_num_threads = 2
     options.inter_op_num_threads = 1
@@ -48,7 +48,7 @@ def _voice():
 
 def _synthesize(text: str) -> list[rtc.AudioFrame]:
     if not text.strip():
-        raise ValueError("Текст синтетического тестового вопроса пуст.")
+        raise ValueError("The synthetic test question is empty.")
     with VOICE_LOCK:
         voice = _voice()
         frames = []
@@ -60,7 +60,7 @@ def _synthesize(text: str) -> list[rtc.AudioFrame]:
             resampler = rtc.AudioResampler(frame.sample_rate, 24000, num_channels=frame.num_channels)
             frames.extend(resampler.push(frame) + resampler.flush())
     if not frames:
-        raise RuntimeError("Piper не сформировал синтетическую тестовую речь.")
+        raise RuntimeError("Piper did not generate synthetic test speech.")
     return frames
 
 

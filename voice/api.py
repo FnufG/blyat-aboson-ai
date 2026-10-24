@@ -23,12 +23,12 @@ def store():
 
 @app.exception_handler(RequestValidationError)
 async def invalid_request(request: Request, exc: RequestValidationError):
-    return JSONResponse({"error": "Некорректный запрос. Проверьте вопрос и базу знаний."}, status_code=422)
+    return JSONResponse({"error": "Invalid request. Check the question and knowledge base."}, status_code=422)
 
 
 @app.exception_handler(AnswerUnavailable)
 async def model_failure(request: Request, exc: AnswerUnavailable):
-    return JSONResponse({"error": str(exc)}, status_code=503)
+    return JSONResponse({"error": str(exc), "code": exc.code}, status_code=503)
 
 
 @app.middleware("http")
@@ -37,9 +37,9 @@ async def input_size(request: Request, call_next):
     try:
         length = int(request.headers.get("content-length", "0") or "0")
     except ValueError:
-        return JSONResponse({"error": "Некорректный размер запроса."}, status_code=400)
+        return JSONResponse({"error": "Invalid request size."}, status_code=400)
     if length > 1_000_000:
-        return JSONResponse({"error": "Слишком большой запрос."}, status_code=413)
+        return JSONResponse({"error": "The request is too large."}, status_code=413)
     return await call_next(request)
 
 
@@ -62,12 +62,12 @@ async def readiness():
         await asyncio.to_thread(load_whisper)
         stt = {"ready": True, "engine": "faster-whisper"}
     except Exception:
-        stt = {"ready": False, "engine": "faster-whisper", "reason": "Локальная модель распознавания не установлена или не загрузилась."}
+        stt = {"ready": False, "engine": "faster-whisper", "reason": "The local speech recognition model is not installed or could not be loaded."}
     try:
         await asyncio.to_thread(load_vad)
         vad = {"ready": True, "engine": "silero"}
     except Exception:
-        vad = {"ready": False, "engine": "silero", "reason": "Не удалось загрузить определение речи."}
+        vad = {"ready": False, "engine": "silero", "reason": "Could not load voice activity detection."}
     mode = tts_mode()
     tts = {"ready": mode == "boson" or bool(espeak_binary()), "mode": mode, "bosonVerified": False}
     livekit_url = os.environ.get("LIVEKIT_URL", "ws://127.0.0.1:7880")
@@ -89,11 +89,11 @@ async def health():
 async def create_session(request: SessionRequest):
     status = await readiness()
     if not status["ready"]:
-        return JSONResponse({"error": "Голосовой сервис ещё не готов. Проверьте состояние компонентов.", **status}, status_code=503)
+        return JSONResponse({"error": "The voice service is not ready. Check component status.", **status}, status_code=503)
     try:
         room = store().create(request)
     except RuntimeError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=429)
+        return JSONResponse({"error": str(exc), "code": "too_many_sessions"}, status_code=429)
     return {"roomName": room, "agentName": "liniya-support", "ttsMode": tts_mode()}
 
 

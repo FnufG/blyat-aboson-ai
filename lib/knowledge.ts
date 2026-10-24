@@ -6,37 +6,37 @@ export const MAX_DOCUMENT_LENGTH = 180_000;
 /** Returns a user-facing error; never trusts local storage or API input. */
 export function validateKnowledge(entries: unknown): string | null {
   if (!Array.isArray(entries) || entries.length === 0) {
-    return "Добавьте хотя бы один вопрос и ответ.";
+    return "Add at least one question and answer.";
   }
   if (entries.length > MAX_KNOWLEDGE_ENTRIES) {
-    return "В базе может быть не больше 100 записей.";
+    return "The knowledge base can contain up to 100 entries.";
   }
   const ids = new Set<string>();
   let documentLength = 0;
   for (const entry of entries) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      return "Некорректная запись в базе знаний.";
+      return "Invalid knowledge base entry.";
     }
     const { id, title, content } = entry as Record<string, unknown>;
     if (typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(id)) {
-      return "У каждой записи должен быть корректный идентификатор.";
+      return "Each entry must have a valid identifier.";
     }
-    if (ids.has(id)) return "Идентификаторы записей не должны повторяться.";
+    if (ids.has(id)) return "Entry identifiers must be unique.";
     ids.add(id);
     if (typeof title !== "string" || !title.trim()) {
-      return "У каждой записи должен быть вопрос или заголовок.";
+      return "Each entry must have a question or title.";
     }
-    if (title.length > 200) return "Заголовок записи не должен превышать 200 символов.";
-    if (/[\r\n]/.test(title)) return "Заголовок записи должен занимать одну строку.";
+    if (title.length > 200) return "Entry titles must not exceed 200 characters.";
+    if (/[\r\n]/.test(title)) return "Entry titles must fit on one line.";
     if (typeof content !== "string" || !content.trim()) {
-      return "У каждой записи должен быть непустой ответ.";
+      return "Each entry must have a nonempty answer.";
     }
-    if (content.length > 4_000) return "Ответ не должен превышать 4000 символов. Разделите его на несколько записей.";
-    if (/[\u0000]/.test(title + content)) return "Используйте текстовый документ без двоичных данных.";
+    if (content.length > 4_000) return "Answers must not exceed 4,000 characters. Split longer answers into multiple entries.";
+    if (/[\u0000]/.test(title + content)) return "Use a text document without binary data.";
     documentLength += title.length + content.length + 7;
   }
   if (documentLength > MAX_DOCUMENT_LENGTH) {
-    return "Общий объём базы не должен превышать 180 000 символов.";
+    return "The knowledge base must not exceed 180,000 characters.";
   }
   return null;
 }
@@ -49,13 +49,13 @@ function requireValid(entries: KnowledgeEntry[]): KnowledgeEntry[] {
 
 /** Markdown uses `## Question` headings. Plain text uses blank-line-separated blocks. */
 export function parseKnowledge(text: string): KnowledgeEntry[] {
-  if (typeof text !== "string") throw new Error("Загрузите текстовый файл .txt или .md.");
+  if (typeof text !== "string") throw new Error("Upload a .txt or .md text file.");
   if (text.length > MAX_DOCUMENT_LENGTH) {
-    throw new Error("Документ не должен превышать 180 000 символов.");
+    throw new Error("Documents must not exceed 180,000 characters.");
   }
   const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").trim();
-  if (!normalized) throw new Error("Документ пуст. Добавьте вопросы и ответы.");
-  if (normalized.includes("\u0000")) throw new Error("Используйте текстовый документ без двоичных данных.");
+  if (!normalized) throw new Error("The document is empty. Add questions and answers.");
+  if (normalized.includes("\u0000")) throw new Error("Use a text document without binary data.");
 
   const headings = [...normalized.matchAll(/^##(?:[\t ]+(.*))?$/gm)];
   const entries: KnowledgeEntry[] = [];
@@ -65,7 +65,7 @@ export function parseKnowledge(text: string): KnowledgeEntry[] {
   if (headings.length) {
     const prefix = normalized.slice(0, headings[0].index).trim();
     // Preserve introductions as a searchable source instead of silently dropping them.
-    if (prefix) addEntry("Общие сведения", prefix);
+    if (prefix) addEntry("General information", prefix);
     headings.forEach((match, index) => {
       const start = match.index! + match[0].length;
       const end = index + 1 < headings.length ? headings[index + 1].index! : normalized.length;
@@ -78,7 +78,7 @@ export function parseKnowledge(text: string): KnowledgeEntry[] {
       if (lines.length > 1) {
         addEntry(lines[0], lines.slice(1).join("\n"));
       } else {
-        addEntry(`Фрагмент ${index + 1}`, block);
+        addEntry(`Section ${index + 1}`, block);
       }
     }
   }
@@ -90,83 +90,37 @@ export function serializeKnowledge(entries: KnowledgeEntry[]): string {
   return entries.map(({ title, content }) => `## ${title.trim()}\n\n${content.trim()}`).join("\n\n") + "\n";
 }
 
-const demoItems: Array<[string, string]> = [
-  [
-    "Что такое ТехноЛиния и для каких устройств эта база?",
-    "ТехноЛиния — вымышленная компания для демонстрации ИИ-консультанта. Все цены, сроки, контакты и характеристики здесь вымышлены. Эта база описывает только учебный роутер TL-100. Сведения нельзя применять к реальному оборудованию без проверки его инструкции.",
-  ],
-  [
-    "Какие часы работы службы поддержки?",
-    "В демонстрационном сценарии сотрудники ТехноЛинии работают с понедельника по пятницу с 09:00 до 18:00 по московскому времени. Суббота и воскресенье — выходные. Автоматический консультант отвечает по этой базе круглосуточно.",
-  ],
-  [
-    "Как связаться с поддержкой?",
-    "Демонстрационный адрес поддержки — support@example.invalid. Это вымышленный адрес: письма на него не доставляются. В реальной базе компания должна указать действующие контакты. Этот прототип отвечает на вопросы и не отправляет обращения сотрудникам.",
-  ],
-  [
-    "Какие условия гарантии на роутер TL-100?",
-    "В учебном примере гарантия на TL-100 составляет 12 месяцев со дня покупки. Для рассмотрения обращения нужны подтверждение покупки и серийный номер. Механические повреждения и повреждения от жидкости в демонстрационные условия гарантии не входят. Решение по конкретному случаю принимает сотрудник после проверки устройства.",
-  ],
-  [
-    "Как впервые подключить роутер TL-100?",
-    "В учебном сценарии подключите кабель провайдера к порту WAN роутера TL-100, затем подключите штатный блок питания. Дождитесь завершения запуска в течение двух минут. Подключитесь к Wi-Fi с именем и паролем, указанными на наклейке устройства. Параметры подключения к интернету уточняются у провайдера.",
-  ],
-  [
-    "Что делать, если интернет не работает на всех устройствах?",
-    "Проверьте, плотно ли подключён кабель провайдера к порту WAN роутера TL-100. Посмотрите, есть ли сообщение об аварии или ограничении услуги у вашего провайдера. Если ограничения нет, выполните обычную перезагрузку роутера и дождитесь двух минут после включения. Если интернет не появился, сообщите поддержке состояние индикаторов. Сброс к заводским настройкам для этой проверки не нужен.",
-  ],
-  [
-    "На роутере TL-100 мигает красный индикатор: что делать?",
-    "В учебной модели TL-100 красный индикатор «Интернет» означает, что роутер не установил соединение с провайдером. Сначала проверьте подключение кабеля к порту WAN. Затем уточните у провайдера, нет ли аварии или ограничения услуги. Если их нет, один раз перезагрузите роутер и подождите две минуты. Если индикатор остаётся красным, нужны дополнительные сведения от поддержки; других проверенных действий в этой инструкции нет.",
-  ],
-  [
-    "Как подключить телефон или ноутбук к Wi-Fi?",
-    "Откройте настройки Wi-Fi на телефоне или ноутбуке, выберите имя сети с наклейки роутера TL-100 и введите указанный там пароль. Это подходит, если имя и пароль сети раньше не меняли. Если сеть переименована, используйте её текущее имя. Пароль от личного кабинета провайдера и пароль Wi-Fi могут различаться.",
-  ],
-  [
-    "Что делать, если забыт пароль Wi-Fi?",
-    "Если пароль Wi-Fi на TL-100 не меняли, посмотрите его на наклейке роутера. Если меняли, проверьте сохранённые параметры на уже подключённом устройстве или обратитесь к администратору сети. В этой базе нет способа узнать изменённый пароль удалённо. Не выполняйте сброс к заводским настройкам, пока не сохранены параметры подключения провайдера.",
-  ],
-  [
-    "Как изменить пароль Wi-Fi на TL-100?",
-    "Подключитесь к роутеру TL-100 и откройте адрес панели управления, указанный на наклейке. Войдите с учётными данными администратора, откройте раздел «Wi-Fi» и задайте новый пароль длиной не менее 12 символов. Сохраните изменения. После смены пароля устройства потребуется подключить к сети заново. Не сообщайте пароли консультанту.",
-  ],
-  [
-    "Почему слабый сигнал Wi-Fi и как улучшить покрытие?",
-    "Разместите TL-100 ближе к центру помещения и выше пола. Не закрывайте его металлическими предметами и не ставьте рядом с микроволновой печью. Сравните сигнал рядом с роутером и в проблемной комнате. Толстые стены могут ослаблять Wi-Fi. Эта база не содержит рекомендаций по покупке усилителей или настройке mesh-сети.",
-  ],
-  [
-    "Как правильно перезагрузить роутер TL-100?",
-    "Отключите питание TL-100 на 30 секунд, затем включите его и подождите две минуты. Обычная перезагрузка сохраняет настройки. Не нажимайте кнопку Reset: она используется для сброса настроек и не нужна для обычной перезагрузки.",
-  ],
-  [
-    "Чем сброс к заводским настройкам отличается от перезагрузки?",
-    "Перезагрузка TL-100 сохраняет настройки. Сброс к заводским настройкам удаляет изменённые параметры Wi-Fi и подключения к провайдеру. После сброса может потребоваться повторная настройка интернета. Не выполняйте сброс без сохранённых параметров и инструкции для вашей модели. В этой базе нет инструкции по запуску заводского сброса.",
-  ],
-  [
-    "Что делать после случайного сброса настроек роутера?",
-    "Для учебного TL-100 после заводского сброса используются исходные имя сети и пароль с наклейки. Для восстановления доступа в интернет потребуются параметры вашего провайдера. Обратитесь к провайдеру или администратору, если эти параметры неизвестны. Консультант не знает ваши личные логин и пароль и не может восстановить их.",
-  ],
-  [
-    "Где открыть панель управления роутером TL-100?",
-    "Адрес панели управления TL-100 указан на наклейке устройства. Открывайте его в браузере на устройстве, подключённом к этому роутеру по Wi-Fi или кабелю. В этой демонстрационной базе нет универсального адреса, логина или пароля администратора. Используйте инструкцию именно вашего устройства.",
-  ],
-  [
-    "Почему появляется ошибка авторизации у провайдера?",
-    "Ошибка авторизации соединения TL-100 может быть связана с параметрами подключения, выданными провайдером. Уточните у провайдера тип подключения и актуальность учётной записи. Не присылайте пароль в чат и не меняйте параметры наугад. В этой базе нет доступа к вашему договору или личному кабинету.",
-  ],
-  [
-    "Интернет не работает только на одном устройстве: что проверить?",
-    "Если другие устройства через TL-100 выходят в интернет, проверьте, подключено ли проблемное устройство к нужной сети Wi-Fi. Выключите и снова включите Wi-Fi на этом устройстве. Затем перезагрузите само устройство. Если это не помогло, уточните его модель и операционную систему: дальнейших инструкций для отдельных систем в этой базе нет.",
-  ],
-  [
-    "Почему низкая скорость интернета?",
-    "Сравните скорость рядом с TL-100 и в другой комнате. На время проверки остановите крупные загрузки на своих устройствах. Если возможно, сравните результат по Wi-Fi и кабелю. Гарантированную скорость и ограничения тарифа уточняйте у провайдера. В этой базе нет сведений о вашем тарифе и обещаний конкретной скорости.",
-  ],
-];
+// Fingerprints remove only unchanged records seeded by the earlier prototype.
+// Uploaded or edited company information is retained during the v1 migration.
+const LEGACY_DEMO_SIGNATURES = new Set([
+  "1c5f6f8e6368bb063b4d0a6ba951019b166d9c871696143c462db1b6500572ef",
+  "ebabf837a666b8d2c5e2a1a2af2f6c1eea7800c2bb7cbb149739fa2662ac5d66",
+  "ad6ab7a670ff745e305b42f60029de6866aa3e87d4bb7f0a2f188a147f7c86c9",
+  "efd9f9be74c4bb4b0f8f4e53790a7b2dd5a95d0e7afbc8478bc22a62a62ed37d",
+  "2eda3281dc8c8085c306b595ba717909d6c03ad730c8bcc3cbd87f428549f9a8",
+  "f3a4c2418e0940d35eed9bad633132da8e40987992a5bfc2d712d0cf5a0b1d62",
+  "1b64086381ddd0544372557618c43203f3c0ad85c995c8e7ad80781a6f788ceb",
+  "04b7db481bd415e2f03a51adb707c48c127f8bf0939abebab557ac7ba71214bb",
+  "7288dab9d66e8821bed17edc8b6df4773cb56703bb8c5f59eec1c208741677d4",
+  "4bba627a7ddb4f98ffc72b8f6ef633f7af6d0528c92baae1e0ca5643521e34eb",
+  "393457db8908a85390d612717c517cf4134b7cd54f8cefcff901b924bcd76f60",
+  "e29abae80aea09053949b4f6ffe4949ebbdd4c195a210ea81caca6a88a10e09c",
+  "ecb381dff4c1c6f39eb6abaeb48f18af686c355593c0048290083a11efea7d2a",
+  "140dea0a209e9ff919abe6cf082f728c09ee8847619804fc22d9aa1f14d02621",
+  "660173658c7dbb8537af851d7fa36da7cab022ff927a5e564c6fbc932d0779aa",
+  "11c5d085de9e4dcf8bc60dfaae48baab6af242408e81ab99b8b88173f9ca5b7d",
+  "0e5473e9ec18afd1152e04cccbd4b83b36ceb1cc83ccbd00e9674449bb86f400",
+  "c26b680b4545d7b6cf6e36af427bb639f2c1a1c80154ee8dd948a6741ba56f26"
+]);
 
-export const demoKnowledge: KnowledgeEntry[] = demoItems.map(([title, content], index) => ({
-  id: `faq-${index + 1}`,
-  title,
-  content,
-}));
+export async function removeLegacyDemoKnowledge(entries: KnowledgeEntry[]): Promise<KnowledgeEntry[]> {
+  // Preserve company records if this page is opened outside a secure browser context.
+  if (!globalThis.crypto?.subtle) return entries;
+  const retained = await Promise.all(entries.map(async (entry) => {
+    const bytes = new TextEncoder().encode(`${entry.id}\0${entry.title}\0${entry.content}`);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    const signature = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+    return LEGACY_DEMO_SIGNATURES.has(signature) ? null : entry;
+  }));
+  return retained.filter((entry): entry is KnowledgeEntry => entry !== null);
+}

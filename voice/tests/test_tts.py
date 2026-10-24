@@ -35,7 +35,7 @@ def test_boson_adapter_decodes_real_audio_bytes_from_compatible_test_endpoint(mo
     async def consume():
         frames = []
         speech = adapters.SupportTTS()
-        async with speech.synthesize("Проверка", conn_options=APIConnectOptions(max_retry=0)) as stream:
+        async with speech.synthesize("Speech check", conn_options=APIConnectOptions(max_retry=0)) as stream:
             async for audio in stream:
                 frames.append(audio.frame)
         await speech.aclose()
@@ -43,7 +43,7 @@ def test_boson_adapter_decodes_real_audio_bytes_from_compatible_test_endpoint(mo
     frames = asyncio.run(consume())
     assert frames and sum(frame.samples_per_channel for frame in frames) > 1000
     assert all(frame.sample_rate == 24000 for frame in frames)
-    assert observed[0]["input"] == "Проверка"
+    assert observed[0]["input"] == "Speech check"
     assert observed[0]["model"] == "higgs-audio-v3-tts"
     assert "voice" not in observed[0]
 
@@ -56,7 +56,7 @@ def test_boson_adapter_rejects_error_instead_of_synthesizing_it(monkeypatch):
     monkeypatch.setattr(adapters.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(provider), **kwargs))
     async def consume():
         speech = adapters.SupportTTS()
-        async with speech.synthesize("Проверка", conn_options=APIConnectOptions(max_retry=0)) as stream:
+        async with speech.synthesize("Speech check", conn_options=APIConnectOptions(max_retry=0)) as stream:
             return [audio async for audio in stream]
     with pytest.raises(Exception, match="Boson|request|retry"):
         asyncio.run(consume())

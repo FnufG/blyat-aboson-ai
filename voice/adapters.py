@@ -23,7 +23,7 @@ def whisper_path() -> Path:
 def load_whisper():
     path = whisper_path()
     if not (path / "model.bin").is_file():
-        raise RuntimeError("Локальная модель распознавания речи не установлена.")
+        raise RuntimeError("The local speech recognition model is not installed.")
     from faster_whisper import WhisperModel
     return WhisperModel(str(path), device="cpu", compute_type="int8", cpu_threads=2, num_workers=1, local_files_only=True)
 
@@ -35,7 +35,7 @@ class FasterWhisperSTT(stt.STT):
     async def _recognize_impl(self, buffer, *, language=NOT_GIVEN, conn_options: APIConnectOptions):
         frame = rtc.combine_audio_frames(buffer)
         if frame.duration > 60:
-            raise RuntimeError("Реплика длиннее 60 секунд. Сформулируйте вопрос короче.")
+            raise RuntimeError("Your turn is longer than 60 seconds. Please ask a shorter question.")
         # LiveKit already gives PCM. Use its maintained resampler and faster-whisper's
         # supported float32-array input, avoiding an unnecessary WAV/PyAV decode pass.
         if frame.sample_rate != 16000:
@@ -46,12 +46,12 @@ class FasterWhisperSTT(stt.STT):
             audio = audio.reshape(-1, frame.num_channels).mean(axis=1)
         audio = audio / 32768.0
         model = await asyncio.to_thread(load_whisper)
-        selected_language = language if isinstance(language, str) else "ru"
+        selected_language = language if isinstance(language, str) else "en"
 
         def transcribe():
             with STT_LOCK:
                 # Keep Whisper's supported default beam search; greedy decoding
-                # dropped key Russian words in real synthetic-speech checks.
+                # helps preserve key words in real speech checks.
                 segments, info = model.transcribe(audio, language=selected_language, beam_size=5, vad_filter=False, condition_on_previous_text=False)
                 text = " ".join(segment.text.strip() for segment in segments).strip()
             return text, info.language
@@ -88,31 +88,31 @@ class SupportAudioStream(tts.ChunkedStream):
             base = os.environ.get("BOSON_BASE_URL", "https://api.boson.ai/v1").rstrip("/")
             url = httpx.URL(base)
             if url.scheme != "https" and not (url.scheme == "http" and url.host in ("localhost", "127.0.0.1", "::1")):
-                raise RuntimeError("Для Boson нужен HTTPS-адрес API.")
+                raise RuntimeError("Boson requires an HTTPS API address.")
             payload = {"model": os.environ.get("BOSON_MODEL", "higgs-audio-v3-tts"), "input": self.input_text, "response_format": "wav"}
             if os.environ.get("BOSON_VOICE"):
                 payload["voice"] = os.environ["BOSON_VOICE"]
             async with httpx.AsyncClient(timeout=httpx.Timeout(35, connect=5), trust_env=True) as client:
                 async with client.stream("POST", base + "/audio/speech", headers={"Authorization": "Bearer " + os.environ["BOSON_API_KEY"]}, json=payload) as response:
                     if response.status_code >= 400:
-                        raise RuntimeError("Boson отклонил запрос озвучки. Проверьте ключ, модель и лимиты API.")
+                        raise RuntimeError("Boson rejected the speech request. Check the API key, model and limits.")
                     mime_type = response.headers.get("content-type", "").split(";")[0].lower()
                     if mime_type not in ("audio/wav", "audio/x-wav", "audio/mpeg", "audio/mp3", "audio/flac", "audio/ogg"):
-                        raise RuntimeError("Boson вернул неподдерживаемый формат аудио.")
+                        raise RuntimeError("Boson returned an unsupported audio format.")
                     output_emitter.initialize(request_id=uuid.uuid4().hex, sample_rate=24000, num_channels=1, mime_type=mime_type)
                     received = 0
                     async for chunk in response.aiter_bytes():
                         received += len(chunk)
                         if received > 10_000_000:
-                            raise RuntimeError("Слишком большой аудиоответ.")
+                            raise RuntimeError("The audio response is too large.")
                         output_emitter.push(chunk)
                     output_emitter.flush()
         else:
             binary = espeak_binary()
             if not binary:
-                raise RuntimeError("Локальный тестовый голос не установлен. Подключите Boson или установите eSpeak NG.")
+                raise RuntimeError("The test voice is not installed. Connect Boson or install eSpeak NG.")
             # No shell is involved; user/model text cannot become executable options.
-            process = await asyncio.create_subprocess_exec(binary, "--stdout", "-v", "ru", "-s", "165", "--", self.input_text, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            process = await asyncio.create_subprocess_exec(binary, "--stdout", "-v", "en-us", "-s", "165", "--", self.input_text, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             try:
                 stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
             except BaseException:
@@ -121,7 +121,7 @@ class SupportAudioStream(tts.ChunkedStream):
                     await process.wait()
                 raise
             if process.returncode or len(stdout) < 44:
-                raise RuntimeError("Не удалось сформировать тестовую речь.")
+                raise RuntimeError("Could not generate test speech.")
             output_emitter.initialize(request_id=uuid.uuid4().hex, sample_rate=24000, num_channels=1, mime_type="audio/wav")
             output_emitter.push(stdout)
             output_emitter.flush()

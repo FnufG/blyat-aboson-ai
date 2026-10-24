@@ -53,6 +53,11 @@ async function measureRemotePcm(page) {
 }
 
 async function main() {
+  if (process.env.LLM_BACKEND !== 'local' || process.env.VOICE_ALLOW_LEGACY_SYNTHETIC !== '1') {
+    emit({check:'legacy_browser_voice', outcome:'blocked', passed:false, reason:'Legacy local-only synthetic diagnostic, not an English cloud acceptance check. Requires LLM_BACKEND=local and VOICE_ALLOW_LEGACY_SYNTHETIC=1; never enables cloud calls.'});
+    process.exitCode = 2;
+    return;
+  }
   let status;
   try {
     const response = await fetch(`${baseUrl}/api/voice/status`, { signal: AbortSignal.timeout(8_000) });

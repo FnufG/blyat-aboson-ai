@@ -1,64 +1,63 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { demoKnowledge, parseKnowledge, serializeKnowledge, validateKnowledge } from "../lib/knowledge";
+import { parseKnowledge, removeLegacyDemoKnowledge, serializeKnowledge, validateKnowledge } from "../lib/knowledge";
+import { testKnowledge } from "./fixtures";
 
-describe("база знаний", () => {
-  it("поставляет 18 валидных вымышленных FAQ и воспроизводимый демофайл", () => {
-    expect(demoKnowledge).toHaveLength(18);
-    expect(validateKnowledge(demoKnowledge)).toBeNull();
-    const demoDocument = readFileSync(new URL("../public/demo-faq.md", import.meta.url), "utf8");
-    expect(parseKnowledge(demoDocument)).toEqual(demoKnowledge);
-    expect(demoDocument).toBe(serializeKnowledge(demoKnowledge));
-    expect(demoDocument).toContain("вымышленная компания");
-    expect(demoDocument).toContain("support@example.invalid");
+describe("knowledge import and export", () => {
+  it("accepts explicit test materials without shipping a demo database", () => {
+    expect(validateKnowledge(testKnowledge)).toBeNull();
+    expect(parseKnowledge(serializeKnowledge(testKnowledge))).toEqual(testKnowledge);
   });
-
-  it("читает BOM, CRLF и многострочные ответы без потери содержимого", () => {
-    expect(parseKnowledge("\uFEFF## Вопрос?\r\n\r\nОтвет.\r\nСледующий шаг.\r\n")).toEqual([
-      { id: "faq-1", title: "Вопрос?", content: "Ответ.\nСледующий шаг." },
+  it("reads BOM, CRLF and multiline answers without losing text", () => {
+    expect(parseKnowledge("\uFEFF## Question?\r\n\r\nAnswer.\r\nNext step.\r\n")).toEqual([
+      { id: "faq-1", title: "Question?", content: "Answer.\nNext step." },
     ]);
   });
-
-  it("сохраняет вступление перед разделами как отдельный источник", () => {
-    const entries = parseKnowledge("Важная общая информация.\n\n## Вопрос\nОтвет");
-    expect(entries[0]).toMatchObject({ title: "Общие сведения", content: "Важная общая информация." });
-    expect(entries[1]).toMatchObject({ title: "Вопрос", content: "Ответ" });
+  it("preserves introductory information as a separate source", () => {
+    const entries = parseKnowledge("Important general information.\n\n## Question\nAnswer");
+    expect(entries[0]).toMatchObject({ title: "General information", content: "Important general information." });
+    expect(entries[1]).toMatchObject({ title: "Question", content: "Answer" });
   });
-
-  it("читает простой текст, разделённый пустыми строками", () => {
-    expect(parseKnowledge("Часы работы\nЕжедневно 9–18.\n\nТелефон\nНомер указан в договоре.")).toEqual([
-      { id: "faq-1", title: "Часы работы", content: "Ежедневно 9–18." },
-      { id: "faq-2", title: "Телефон", content: "Номер указан в договоре." },
+  it("reads plain text blocks separated by blank lines", () => {
+    expect(parseKnowledge("Opening hours\nDaily 9–18.\n\nPhone\nThe number is on your contract.")).toEqual([
+      { id: "faq-1", title: "Opening hours", content: "Daily 9–18." },
+      { id: "faq-2", title: "Phone", content: "The number is on your contract." },
     ]);
-    expect(parseKnowledge("Только одна строка сведений")[0].content).toBe("Только одна строка сведений");
+    expect(parseKnowledge("A single line of information")[0].content).toBe("A single line of information");
   });
-
-  it("сохраняет подзаголовки ответа и не принимает пустые записи", () => {
-    expect(parseKnowledge("## Вопрос\nОтвет\n### Шаг\nДействие")[0].content).toContain("### Шаг");
-    expect(() => parseKnowledge("## Без ответа")).toThrow("непустой ответ");
-    expect(() => parseKnowledge("##\nОтвет")).toThrow("заголовок");
-    expect(() => parseKnowledge(" \n ")).toThrow("пуст");
+  it("preserves answer subheadings and rejects empty entries", () => {
+    expect(parseKnowledge("## Question\nAnswer\n### Step\nAction")[0].content).toContain("### Step");
+    expect(() => parseKnowledge("## No answer")).toThrow(/answer/i);
+    expect(() => parseKnowledge("##\nAnswer")).toThrow(/title/i);
+    expect(() => parseKnowledge(" \n ")).toThrow(/empty/i);
   });
-
-  it("отклоняет превышение лимитов вместо обрезания данных", () => {
-    expect(() => parseKnowledge("x".repeat(180_001))).toThrow("180 000");
-    expect(() => parseKnowledge(`## Вопрос\n${"x".repeat(4_001)}`)).toThrow("4000");
-    expect(() => parseKnowledge(`## ${"x".repeat(201)}\nОтвет`)).toThrow("200");
-    const entries = Array.from({ length: 101 }, (_, i) => ({ id: `entry-${i}`, title: "Вопрос", content: "Ответ" }));
+  it("rejects size limits rather than silently truncating", () => {
+    expect(() => parseKnowledge("x".repeat(180_001))).toThrow("180,000");
+    expect(() => parseKnowledge(`## Question\n${"x".repeat(4_001)}`)).toThrow(/4,?000/);
+    expect(() => parseKnowledge(`## ${"x".repeat(201)}\nAnswer`)).toThrow("200");
+    const entries = Array.from({ length: 101 }, (_, i) => ({ id: `entry-${i}`, title: "Question", content: "Answer" }));
     expect(validateKnowledge(entries)).toContain("100");
   });
-
-  it("проверяет типы, пустые строки и уникальность идентификаторов", () => {
+  it("validates types, empty strings and unique source IDs", () => {
     for (const invalid of [null, {}, [], [null], [{ id: "x", title: " ", content: "A" }], [{ id: "bad id", title: "Q", content: "A" }], [{ id: "x", title: "Q", content: 3 }]]) {
       expect(validateKnowledge(invalid)).not.toBeNull();
     }
-    expect(validateKnowledge([demoKnowledge[0], demoKnowledge[0]])).toContain("повторяться");
-    expect(() => parseKnowledge("\u0000binary")).toThrow("двоичных");
+    expect(validateKnowledge([testKnowledge[0], testKnowledge[0]])).toMatch(/unique|repeat|duplicate/i);
+    expect(() => parseKnowledge("\u0000binary")).toThrow(/binary/i);
   });
-
-  it("экспортирует и импортирует пользовательские записи без изменения текста", () => {
-    const entries = [{ id: "custom", title: "Как помочь?", content: "Первый шаг.\n\nВторой шаг." }];
+  it("round-trips custom answers without changing their content", () => {
+    const entries = [{ id: "custom", title: "How can we help?", content: "First step.\n\nSecond step." }];
     expect(parseKnowledge(serializeKnowledge(entries))[0]).toEqual({ ...entries[0], id: "faq-1" });
     expect(() => serializeKnowledge([])).toThrow();
+  });
+});
+
+const legacyEntry = {"id": "faq-1", "title": "Что такое ТехноЛиния и для каких устройств эта база?", "content": "ТехноЛиния — вымышленная компания для демонстрации ИИ-консультанта. Все цены, сроки, контакты и характеристики здесь вымышлены. Эта база описывает только учебный роутер TL-100. Сведения нельзя применять к реальному оборудованию без проверки его инструкции."};
+
+describe("legacy workspace migration", () => {
+  it("removes seeded legacy data while preserving uploaded and edited entries with the same IDs", async () => {
+    const edited = {...legacyEntry, content: "Our real company instructions."};
+    const uploaded = {id: "faq-2", title: "Our office", content: "The office opens at 08:30."};
+    expect(await removeLegacyDemoKnowledge([legacyEntry])).toEqual([]);
+    expect(await removeLegacyDemoKnowledge([edited, uploaded])).toEqual([edited, uploaded]);
   });
 });

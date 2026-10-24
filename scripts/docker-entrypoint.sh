@@ -20,8 +20,10 @@ trap 'exit 143' TERM
 run_step() {
   "$python" scripts/voice-stack.py "$1" &
   active_pid=$!
-  wait "$active_pid"
+  local status=0
+  wait "$active_pid" || status=$?
   active_pid=
+  return "$status"
 }
 
 # The volume keeps downloaded models and generated credentials between starts.
@@ -30,8 +32,10 @@ mkdir -p .local/bin .local/pids
 cp /opt/liniya/livekit-server .local/bin/livekit-server
 chmod 755 .local/bin/livekit-server
 rm -f .local/pids/*.json
-printf '%s\n' 'Preparing verified local models. The first start downloads about 1.3 GB; later starts reuse this volume.'
+printf '%s\n' 'Preparing speech recognition. Cloud mode downloads about 150 MB on first start; later starts reuse this volume.'
 run_step setup
-run_step up
+if ! run_step up; then
+  printf '%s\n' 'Voice services are not ready. The web interface will still start so you can edit knowledge and inspect readiness.'
+fi
 printf '%s\n' 'Starting the browser interface at http://localhost:3000'
 run_step web

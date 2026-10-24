@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { demoKnowledge } from "../lib/knowledge";
+import { testKnowledge as demoKnowledge } from "./fixtures";
 import { createVoiceSession, voiceStatus } from "../lib/voice-server";
 import { POST } from "../app/api/voice/session/route";
 import { GET } from "../app/api/voice/status/route";
@@ -69,7 +69,7 @@ afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe("voice service readiness", () => {
   it("reports actual missing models and keeps the provider identified as test speech", async () => {
     const health = readyHealth();
-    const missingReason = "Локальная модель распознавания не установлена.";
+    const missingReason = "The local speech recognition model is not installed.";
     health.ready = false;
     health.components.stt = { ready: false, reason: missingReason } as typeof health.components.stt;
     installFetch(health);
@@ -123,7 +123,7 @@ describe("scoped voice sessions", () => {
     const health = readyHealth();
     health.ready = false; health.components.llm.ready = false;
     const fetchMock = installFetch(health);
-    await expect(createVoiceSession(demoKnowledge, "http://localhost:3000/api/voice/session")).rejects.toThrow("не готов");
+    await expect(createVoiceSession(demoKnowledge, "http://localhost:3000/api/voice/session")).rejects.toThrow(/not ready/i);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(sdk.createRoom).not.toHaveBeenCalled();
     expect(sdk.createDispatch).not.toHaveBeenCalled();
@@ -133,7 +133,7 @@ describe("scoped voice sessions", () => {
   it("requires credentials before contacting services", async () => {
     vi.stubEnv("LIVEKIT_API_SECRET", "");
     const fetchMock = installFetch();
-    await expect(createVoiceSession(demoKnowledge, "http://localhost:3000/api/voice/session")).rejects.toThrow("не настроен");
+    await expect(createVoiceSession(demoKnowledge, "http://localhost:3000/api/voice/session")).rejects.toThrow(/not configured/i);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -144,7 +144,7 @@ describe("scoped voice sessions", () => {
     expect(response.status).toBe(200);
     const call = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith("/sessions") && init?.method === "POST");
     expect(call).toBeDefined();
-    expect(JSON.parse(call![1]!.body as string)).toEqual({ knowledge: original, language: "ru" });
+    expect(JSON.parse(call![1]!.body as string)).toEqual({ knowledge: original, language: "en" });
     expect(demoKnowledge).toEqual(original);
   });
 
@@ -196,7 +196,7 @@ describe("scoped voice sessions", () => {
   it("rejects an invalid room name without issuing any token", async () => {
     const fetchMock = installFetch();
     fetchMock.mockImplementation(async (url) => String(url).endsWith("/health") ? json(readyHealth()) : json({ roomName: "arbitrary-admin-room" }));
-    await expect(createVoiceSession(demoKnowledge, "http://localhost:3000/api/voice/session")).rejects.toThrow("некорректную комнату");
+    await expect(createVoiceSession(demoKnowledge, "http://localhost:3000/api/voice/session")).rejects.toThrow(/invalid room/i);
     expect(sdk.createRoom).not.toHaveBeenCalled();
     expect(sdk.toJwt).not.toHaveBeenCalled();
   });
@@ -204,7 +204,7 @@ describe("scoped voice sessions", () => {
   it("cleans up the prepared room and knowledge when dispatch fails", async () => {
     const fetchMock = installFetch();
     sdk.createDispatch.mockRejectedValue(new Error("internal dispatch details"));
-    await expect(createVoiceSession(demoKnowledge, "http://localhost:3000/api/voice/session")).rejects.toThrow("Не удалось подключить агента");
+    await expect(createVoiceSession(demoKnowledge, "http://localhost:3000/api/voice/session")).rejects.toThrow(/agent/i);
     expect(sdk.deleteRoom).toHaveBeenCalledWith(roomName);
     expect(fetchMock).toHaveBeenCalledWith(`http://127.0.0.1:8001/sessions/${roomName}`, expect.objectContaining({ method: "DELETE" }));
     expect(sdk.toJwt).not.toHaveBeenCalled();

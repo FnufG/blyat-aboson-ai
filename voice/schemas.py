@@ -12,14 +12,14 @@ class KnowledgeEntry(BaseModel):
     @classmethod
     def meaningful_text(cls, value: str) -> str:
         if not value.strip() or "\x00" in value:
-            raise ValueError("Текст должен быть непустым и не содержать двоичных данных.")
+            raise ValueError("Text must not be empty or contain binary data.")
         return value.strip()
 
     @field_validator("title")
     @classmethod
     def one_line(cls, value: str) -> str:
         if "\r" in value or "\n" in value:
-            raise ValueError("Заголовок должен занимать одну строку.")
+            raise ValueError("The title must fit on one line.")
         return value
 
 
@@ -29,9 +29,9 @@ class KnowledgeRequest(BaseModel):
     @model_validator(mode="after")
     def unique_and_limited(self):
         if len({item.id for item in self.knowledge}) != len(self.knowledge):
-            raise ValueError("Идентификаторы материалов должны быть уникальными.")
+            raise ValueError("Knowledge entry IDs must be unique.")
         if sum(len(item.title) + len(item.content) + 6 for item in self.knowledge) > 180_000:
-            raise ValueError("База знаний превышает 180000 символов.")
+            raise ValueError("The knowledge base exceeds 180000 characters.")
         return self
 
 
@@ -50,13 +50,13 @@ class AnswerRequest(KnowledgeRequest):
     @classmethod
     def nonempty_question(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("Введите вопрос.")
+            raise ValueError("Enter a question.")
         return value.strip()
 
 
 class SessionRequest(KnowledgeRequest):
-    companyName: str = Field(default="ТехноЛиния", min_length=1, max_length=100)
-    language: Literal["ru"] = "ru"
+    companyName: str = Field(default="Your company", min_length=1, max_length=100)
+    language: Literal["en"] = "en"
 
 
 class AnswerReply(BaseModel):

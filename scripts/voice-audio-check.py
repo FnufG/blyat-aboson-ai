@@ -42,7 +42,7 @@ async def main():
         raise RuntimeError("This check is intentionally for the local test voice. Run without a Boson binding to avoid a paid API call.")
     speech = SupportTTS()
     frames = []
-    async with speech.synthesize("Здравствуйте! Какие условия гарантии?") as stream:
+    async with speech.synthesize("Hello! What are your support hours?") as stream:
         async for audio in stream:
             frames.append(audio.frame)
     await speech.aclose()

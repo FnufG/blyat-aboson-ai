@@ -1,123 +1,70 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { answerQuestion, ProviderError } from "../lib/answer";
-import { demoKnowledge } from "../lib/knowledge";
 import { UNKNOWN_ANSWER } from "../lib/retrieval";
 import type { ChatRequest } from "../lib/types";
-
-const request: ChatRequest = { question: "Какие условия гарантии?", history: [], knowledge: demoKnowledge };
-function responseFor(value: unknown) {
-  return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
-}
+import { testKnowledge } from "./fixtures";
+const request: ChatRequest = { question: "What are the warranty terms?", history: [], knowledge: testKnowledge };
+const responseFor = (value: unknown, status=200) => new Response(JSON.stringify(value), {status, headers:{"Content-Type":"application/json"}});
 beforeEach(() => {
-  vi.stubEnv("LLM_API_KEY", "");
-  vi.stubEnv("LLM_BASE_URL", "https://api.example.invalid/v1");
-  vi.stubEnv("LLM_MODEL", "test-model");
+  vi.stubEnv("LLM_BACKEND", "faq"); vi.stubEnv("LLM_API_KEY", "");
+  vi.stubEnv("VOICE_API_URL", "http://127.0.0.1:8001");
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
-
-describe("local extractive mode", () => {
-  it("quotes a real source verbatim and labels the mode", async () => {
-    const answer = await answerQuestion(request);
-    expect(answer.mode).toBe("local");
-    expect(answer.status).toBe("answered");
-    expect(answer.answer).toBe(demoKnowledge[3].content);
-    expect(answer.sources.map(({ id }) => id)).toEqual(["faq-4"]);
+describe("explicit extractive FAQ mode", () => {
+  it("quotes a real source and identifies the mode", async () => {
+    expect(await answerQuestion(request)).toEqual({mode:"local", status:"answered",answer:testKnowledge[3].content,sources:[testKnowledge[3]]});
   });
-
   it("does not invent an unsupported answer", async () => {
-    const answer = await answerQuestion({ ...request, question: "Какая погода завтра?" });
-    expect(answer).toEqual({ answer: UNKNOWN_ANSWER, mode: "local", status: "unknown", sources: [] });
+    expect(await answerQuestion({...request, question:"What is tomorrow's weather?"})).toEqual({answer:UNKNOWN_ANSWER,mode:"local",status:"unknown",sources:[]});
   });
-
-  it("clarifies a greeting without presenting a fake source", async () => {
-    const answer = await answerQuestion({ ...request, question: "Здравствуйте!" });
-    expect(answer.status).toBe("clarification");
-    expect(answer.sources).toEqual([]);
+  it("clarifies a greeting without inventing a source", async () => {
+    expect(await answerQuestion({...request,question:"Hello!"})).toMatchObject({status:"clarification", sources:[]});
   });
-
-  it("preserves the prior source when the customer says a step failed", async () => {
-    const answer = await answerQuestion({
-      ...request,
-      question: "А если это не помогло?",
-      history: [{ role: "assistant", content: demoKnowledge[6].content, sourceIds: ["faq-7"] }],
-    });
+  it("preserves the previous source when a step failed", async () => {
+    const answer=await answerQuestion({...request,question:"What if that did not help?",history:[{role:"assistant",content:testKnowledge[6].content,sourceIds:["faq-7"]}]});
     expect(answer.status).toBe("clarification");
-    expect(answer.sources.map(({ id }) => id)).toEqual(["faq-7"]);
-    expect(answer.answer).toContain(demoKnowledge[6].content);
+    expect(answer.sources.map(s=>s.id)).toEqual(["faq-7"]);
+    expect(answer.answer).toContain(testKnowledge[6].content);
   });
 });
-
-describe("server-side model adapter", () => {
-  beforeEach(() => vi.stubEnv("LLM_API_KEY", "test-key-not-a-credential"));
-
-  it("sends grounded context and history, and accepts an answer citing a retrieved source", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(responseFor({ status: "answered", answer: "Гарантия — 12 месяцев.", sourceIds: ["faq-4"] }));
-    vi.stubGlobal("fetch", fetchMock);
-    const answer = await answerQuestion({ ...request, history: [{ role: "user", content: "Я приобрёл TL-100" }] });
-    expect(answer).toMatchObject({ answer: "Гарантия — 12 месяцев.", mode: "llm", status: "answered" });
-    expect(answer.sources.map(({ id }) => id)).toEqual(["faq-4"]);
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toBe("https://api.example.invalid/v1/chat/completions");
-    expect(init.headers.Authorization).toBe("Bearer test-key-not-a-credential");
-    const payload = JSON.parse(init.body);
-    expect(payload.model).toBe("test-model");
-    expect(payload.messages[0].content).toContain(demoKnowledge[3].content);
-    expect(payload.messages[1]).toEqual({ role: "user", content: "Я приобрёл TL-100" });
-    expect(payload.messages.at(-1)).toEqual({ role: "user", content: request.question });
-    expect(payload.response_format).toEqual({ type: "json_object" });
+describe("shared text and voice model broker", () => {
+  beforeEach(() => vi.stubEnv("LLM_BACKEND", "cloud"));
+  const validReply=()=>({status:"answered",answer:"The warranty lasts 12 months.",sources:[testKnowledge[3]],mode:"llm"});
+  it.each(["cloud","local"])("routes %s mode through the same grounded answer backend",async backend=>{
+    vi.stubEnv("LLM_BACKEND", backend);
+    const fetchMock=vi.fn().mockResolvedValue(responseFor(validReply())); vi.stubGlobal("fetch",fetchMock);
+    const input={...request,history:[{role:"user" as const,content:"I bought TL-100"}]};
+    expect(await answerQuestion(input)).toEqual(validReply());
+    const [url,init]=fetchMock.mock.calls[0];
+    expect(String(url)).toBe("http://127.0.0.1:8001/answer");
+    expect(JSON.parse(init.body)).toEqual(input);
     expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(JSON.stringify(init.headers)).not.toContain("Authorization");
   });
-
-  it("never calls the model for an entirely unsupported question", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const answer = await answerQuestion({ ...request, question: "Расскажи анекдот" });
-    expect(answer.status).toBe("unknown");
-    expect(fetchMock).not.toHaveBeenCalled();
+  it("never silently falls back to FAQ when cloud is unconfigured",async()=>{
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(responseFor({error:"Configure LLM_API_KEY."},503)));
+    await expect(answerQuestion(request)).rejects.toBeInstanceOf(ProviderError);
   });
-
   it.each([
-    { status: "answered", answer: "Гарантия — 12 месяцев.", sourceIds: [] },
-    { status: "answered", answer: "Гарантия — 12 месяцев.", sourceIds: ["invented-source"] },
-    { status: "answered", answer: "Гарантия — 12 месяцев." },
-    { status: "answered", answer: "", sourceIds: ["faq-4"] },
-    { status: "unrecognized", answer: "Ответ", sourceIds: ["faq-4"] },
-  ])("rejects malformed or ungrounded model output: %j", async (value) => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseFor(value)));
+    {...validReply(),sources:[]}, {...validReply(),sources:[{id:"invented",title:"Q",content:"A"}]},
+    {...validReply(),status:"unrecognized"}, {...validReply(),answer:""}, {...validReply(),mode:"local"},
+    {...validReply(),sources:[{...testKnowledge[3],content:"Injected unsupported fact"}]},
+  ])("rejects malformed or fabricated broker replies",async value=>{
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(responseFor(value)));
     await expect(answerQuestion(request)).rejects.toBeInstanceOf(ProviderError);
   });
-
-  it("replaces an unknown response with the safe standard fallback", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseFor({ status: "unknown", answer: "Maybe you should replace the router.", sourceIds: [] })));
-    const answer = await answerQuestion(request);
-    expect(answer.answer).toBe(UNKNOWN_ANSWER);
-    expect(answer.sources).toEqual([]);
-    expect(answer.status).toBe("unknown");
+  it("accepts the safe unknown reply without sources",async()=>{
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(responseFor({mode:"llm",status:"unknown",answer:UNKNOWN_ANSWER,sources:[]})));
+    expect(await answerQuestion(request)).toMatchObject({status:"unknown",sources:[],answer:UNKNOWN_ANSWER});
   });
-
-  it("accepts a clarification that makes no unsupported factual claim", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(responseFor({ status: "clarification", answer: "Уточните дату покупки.", sourceIds: [] })));
-    expect(await answerQuestion(request)).toMatchObject({ status: "clarification", sources: [], mode: "llm" });
+  it.each([401,403,429,500,503])("sanitizes HTTP %i failures",async status=>{
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(responseFor({error:"private-provider-debug",key:"test-key-not-a-credential"},status)));
+    try {await answerQuestion(request); throw new Error("Expected provider rejection");}
+    catch(error){expect(error).toBeInstanceOf(ProviderError); expect(String(error)).not.toMatch(/private-provider-debug|test-key-not-a-credential/);}
   });
-
-  it.each([401, 403, 429, 500])("handles provider HTTP %i without exposing its response", async (status) => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("sensitive-provider-details", { status })));
+  it("sanitizes network errors",async()=>{
+    vi.stubGlobal("fetch",vi.fn().mockRejectedValue(new Error("private-network-debug")));
     await expect(answerQuestion(request)).rejects.toBeInstanceOf(ProviderError);
-    await expect(answerQuestion(request)).rejects.not.toThrow("sensitive-provider-details");
+    await expect(answerQuestion(request)).rejects.not.toThrow("private-network-debug");
   });
-
-  it("turns a network timeout into a user-facing provider error", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("Timed out", "TimeoutError")));
-    await expect(answerQuestion(request)).rejects.toThrow("Модель не ответила вовремя");
-  });
-
-  it.each(["http://api.example.invalid/v1", "https://user:password@example.invalid/v1", "not-a-url"]) (
-    "rejects an unsafe configured provider URL before sending the key: %s", async (baseUrl) => {
-      vi.stubEnv("LLM_BASE_URL", baseUrl);
-      const fetchMock = vi.fn();
-      vi.stubGlobal("fetch", fetchMock);
-      await expect(answerQuestion(request)).rejects.toBeInstanceOf(ProviderError);
-      expect(fetchMock).not.toHaveBeenCalled();
-    },
-  );
 });

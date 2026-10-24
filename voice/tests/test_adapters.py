@@ -14,7 +14,7 @@ def recognize(frame):
     async def run():
         engine = adapters.FasterWhisperSTT()
         try:
-            return await engine.recognize(frame, language="ru", conn_options=APIConnectOptions(max_retry=0))
+            return await engine.recognize(frame, conn_options=APIConnectOptions(max_retry=0))
         finally:
             await engine.aclose()
     return asyncio.run(run())
@@ -32,7 +32,7 @@ def test_stt_resamples_and_downmixes_pcm_for_supported_whisper_array_input(monke
     class Model:
         def transcribe(self, audio, **options):
             observed.append((audio, options))
-            return iter([SimpleNamespace(text=" Проверка речи ")]), SimpleNamespace(language="ru")
+            return iter([SimpleNamespace(text=" Speech check ")]), SimpleNamespace(language="en")
 
     monkeypatch.setattr(adapters, "load_whisper", lambda: Model())
     frame = rtc.AudioFrame(stereo.tobytes(), sample_rate, 2, len(time))
@@ -43,9 +43,9 @@ def test_stt_resamples_and_downmixes_pcm_for_supported_whisper_array_input(monke
     assert np.isfinite(audio).all() and np.max(np.abs(audio)) <= 1
     expected_rms = (12000 / 32768) / np.sqrt(2)
     assert np.sqrt(np.mean(audio[100:-100] ** 2)) == pytest.approx(expected_rms, rel=0.03)
-    assert options["language"] == "ru"
+    assert options["language"] == "en"
     assert options["condition_on_previous_text"] is False
-    assert event.alternatives[0].text == "Проверка речи"
+    assert event.alternatives[0].text == "Speech check"
 
 
 def test_stt_rejects_overlong_pcm_before_loading_model(monkeypatch):

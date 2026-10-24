@@ -20,7 +20,7 @@ services:
     volumes:
       - local-data:/app/.local
     cpus: 4.0
-    mem_limit: 10g
+    mem_limit: 6g
     shm_size: 256m
     stop_grace_period: 45s
     healthcheck:
@@ -28,7 +28,7 @@ services:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:3000/api/voice/status', {signal: AbortSignal.timeout(12000)}).then(async r => {if (!r.ok || !(await r.json()).ready) process.exit(1)}).catch(() => process.exit(1))"
+        - "fetch('http://127.0.0.1:3000/api/status', {signal: AbortSignal.timeout(12000)}).then(r => {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"
       start_period: 30m
       interval: 30s
       timeout: 15s

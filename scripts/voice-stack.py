@@ -32,9 +32,22 @@ def digest(path):
     return h.hexdigest()
 
 
+def load_settings():
+    from dotenv import dotenv_values
+    for path in [ROOT / ".env.local", LOCAL / "runtime.env"]:
+        for key, value in dotenv_values(path).items():
+            if value is not None:
+                os.environ.setdefault(key, value)
+    os.environ.setdefault("LLM_BACKEND", "cloud")
+    local = os.environ["LLM_BACKEND"] == "local"
+    os.environ.setdefault("LLM_BASE_URL", "http://127.0.0.1:11434/v1" if local else "https://api.openai.com/v1")
+    os.environ.setdefault("LLM_MODEL", "qwen2.5:1.5b" if local else "gpt-4.1-mini")
+
+
 def install_binaries():
+    load_settings()
     (LOCAL / "bin").mkdir(parents=True, exist_ok=True)
-    if not LLAMA.is_file():
+    if os.environ["LLM_BACKEND"] == "local" and not LLAMA.is_file():
         archive = LOCAL / f"llama-{LLAMA_RELEASE}.tar.gz"
         url = f"https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_RELEASE}/llama-{LLAMA_RELEASE}-bin-ubuntu-x64.tar.gz"
         urllib.request.urlretrieve(url, archive)
@@ -98,7 +111,9 @@ def install_nltk_data():
 
 
 def install_models():
+    load_settings()
     install_nltk_data()
+    print("Preparing English speech recognition (Whisper base, about 150 MB). Cloud mode skips the local language model.", flush=True)
     os.environ.setdefault("HF_HOME", str(LOCAL / "huggingface"))
     os.environ.setdefault("HF_XET_CACHE", str(LOCAL / "huggingface/xet"))
     os.environ.setdefault("XDG_CACHE_HOME", str(LOCAL / "cache"))
@@ -127,23 +142,24 @@ def install_models():
     manifest_path = model_dir / "manifest.json"
     lock_path = ROOT / "voice/model-lock.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else (json.loads(lock_path.read_text()) if lock_path.is_file() else {})
-    qwen_repo = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
-    info = api.model_info(qwen_repo, revision=manifest.get("qwen", {}).get("revision", "main"), files_metadata=True)
-    filename = GGUF.name
-    entry = next((item for item in info.siblings if item.rfilename == filename), None)
-    expected = entry.lfs.sha256 if entry and entry.lfs else None
-    if not expected:
-        raise RuntimeError("Official model metadata does not contain a SHA256 for the selected Qwen GGUF.")
-    pinned_checksum = manifest.get("qwen", {}).get("sha256")
-    if pinned_checksum and pinned_checksum != expected:
-        raise RuntimeError("Official Qwen metadata disagrees with the pinned checksum; installation stopped.")
-    if not GGUF.is_file() or digest(GGUF) != expected:
-        require_artifact_route(qwen_repo, filename, info.sha)
-        path = hf_hub_download(qwen_repo, filename, revision=info.sha, local_dir=model_dir, token=False, force_download=GGUF.is_file())
-        if digest(path) != expected:
-            raise RuntimeError("Qwen artifact checksum mismatch. Do not use it.")
-    manifest["qwen"] = {"repo": qwen_repo, "revision": info.sha, "file": filename, "sha256": expected}
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    if os.environ["LLM_BACKEND"] == "local":
+        qwen_repo = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
+        info = api.model_info(qwen_repo, revision=manifest.get("qwen", {}).get("revision", "main"), files_metadata=True)
+        filename = GGUF.name
+        entry = next((item for item in info.siblings if item.rfilename == filename), None)
+        expected = entry.lfs.sha256 if entry and entry.lfs else None
+        if not expected:
+            raise RuntimeError("Official model metadata does not contain a SHA256 for the selected Qwen GGUF.")
+        pinned_checksum = manifest.get("qwen", {}).get("sha256")
+        if pinned_checksum and pinned_checksum != expected:
+            raise RuntimeError("Official Qwen metadata disagrees with the pinned checksum; installation stopped.")
+        if not GGUF.is_file() or digest(GGUF) != expected:
+            require_artifact_route(qwen_repo, filename, info.sha)
+            path = hf_hub_download(qwen_repo, filename, revision=info.sha, local_dir=model_dir, token=False, force_download=GGUF.is_file())
+            if digest(path) != expected:
+                raise RuntimeError("Qwen artifact checksum mismatch. Do not use it.")
+        manifest["qwen"] = {"repo": qwen_repo, "revision": info.sha, "file": filename, "sha256": expected}
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     # Whisper artifacts are tied to an exact repository revision; LFS files are verified below.
     whisper_repo = "Systran/faster-whisper-base"
     info = api.model_info(whisper_repo, revision=manifest.get("whisper", {}).get("revision", "main"), files_metadata=True)
@@ -169,7 +185,7 @@ def install_models():
     # Application output remains the explicitly labelled eSpeak/Boson provider.
     locked = json.loads(lock_path.read_text()) if lock_path.is_file() else {}
     piper = locked.get("piper")
-    if piper:
+    if piper and os.environ.get("VOICE_INSTALL_TEST_FIXTURES") == "1":
         directory = model_dir / "piper-test"
         directory.mkdir(exist_ok=True)
         for name, artifact in piper["files"].items():
@@ -190,20 +206,15 @@ def install_models():
 
 
 def configure():
-    from dotenv import dotenv_values
     LOCAL.mkdir(exist_ok=True)
     runtime = LOCAL / "runtime.env"
     if not runtime.is_file():
         # Legitimate local server credentials, generated here rather than external account credentials.
         runtime.write_text("LIVEKIT_API_KEY=liniya-" + secrets.token_hex(8) + "\nLIVEKIT_API_SECRET=" + secrets.token_hex(32) + "\n")
         runtime.chmod(0o600)
-    for path in [ROOT / ".env.local", runtime]:
-        for key, value in dotenv_values(path).items():
-            if value is not None:
-                os.environ.setdefault(key, value)
+    load_settings()
     defaults = {
-        "LIVEKIT_URL": "ws://127.0.0.1:7880", "LLM_BACKEND": "local",
-        "LLM_BASE_URL": "http://127.0.0.1:11434/v1", "LLM_MODEL": "qwen2.5:1.5b",
+        "LIVEKIT_URL": "ws://127.0.0.1:7880",
         "VOICE_API_URL": "http://127.0.0.1:8001",
         "WHISPER_MODEL_PATH": str(LOCAL / "models/whisper-base"),
         "ESPEAK_BINARY": str(LOCAL / "espeak/bin/espeak-ng"),
@@ -280,10 +291,12 @@ def up():
     if not (LOCAL / "bin/livekit-server").exists():
         raise RuntimeError("Run npm run voice:setup first.")
     start("livekit", [str(LOCAL / "bin/livekit-server"), "--config", str(config)], [str(LOCAL / "bin/livekit-server")])
-    if GGUF.is_file():
+    if os.environ["LLM_BACKEND"] == "local" and GGUF.is_file():
         start("llm", [str(LLAMA), "--model", str(GGUF), "--alias", os.environ["LLM_MODEL"], "--host", "127.0.0.1", "--port", "11434", "--threads", "3", "--ctx-size", "8192", "--n-predict", "256", "--parallel", "1"], [str(LLAMA), str(GGUF)])
-    else:
+    elif os.environ["LLM_BACKEND"] == "local":
         print("LLM weights absent: download required, not ready for conversation.")
+    else:
+        print("Cloud LLM selected; no local language model is started.")
     start("voice-api", [str(PYTHON), "-m", "uvicorn", "voice.api:app", "--host", "127.0.0.1", "--port", "8001"], ["uvicorn", "voice.api:app"])
     import http.client
     for attempt in range(30):

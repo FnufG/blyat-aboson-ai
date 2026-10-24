@@ -13,7 +13,7 @@ def session_store(monkeypatch, tmp_path):
     path = tmp_path / "sessions.sqlite3"
     monkeypatch.setenv("VOICE_SESSION_DB", str(path))
     store = SessionStore(path)
-    request = SessionRequest(knowledge=[KnowledgeEntry(id="faq", title="Вопрос", content="Ответ")])
+    request = SessionRequest(knowledge=[KnowledgeEntry(id="faq", title="Question", content="Answer")])
     return store, request
 
 

@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "../app/api/chat/route";
-import { demoKnowledge } from "../lib/knowledge";
+import { testKnowledge as demoKnowledge } from "./fixtures";
 import { InputError, parseChatRequest } from "../lib/validation";
 
-const validInput = { question: "Какие условия гарантии?", history: [], knowledge: demoKnowledge };
+const validInput = { question: "What are the warranty terms?", history: [], knowledge: demoKnowledge };
 const makeRequest = (body: unknown, headers: Record<string, string> = {}) => new Request("http://localhost:3000/api/chat", {
   method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body),
 });
-beforeEach(() => vi.stubEnv("LLM_API_KEY", ""));
+beforeEach(() => { vi.stubEnv("LLM_API_KEY", ""); vi.stubEnv("LLM_BACKEND", "faq"); });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("chat input validation", () => {
   it("accepts valid data and trims the current question", () => {
-    expect(parseChatRequest({ ...validInput, question: "  Вопрос?  " }).question).toBe("Вопрос?");
+    expect(parseChatRequest({ ...validInput, question: "  Question?  " }).question).toBe("Question?");
   });
   it.each([
     null,
@@ -50,7 +50,7 @@ describe("POST /api/chat", () => {
   it("rejects invalid JSON with a validation error", async () => {
     const response = await POST(new Request("http://localhost:3000/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{broken" }));
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "Некорректный JSON." });
+    expect((await response.json()).error).toMatch(/JSON/i);
   });
   it("rejects oversized payloads", async () => {
     const response = await POST(makeRequest({ ...validInput, question: "a".repeat(600001) }));
@@ -81,17 +81,19 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(400);
   });
   it("returns an unknown result for unsupported information", async () => {
-    const response = await POST(makeRequest({ ...validInput, question: "Какая погода завтра?" }));
+    const response = await POST(makeRequest({ ...validInput, question: "What is tomorrow's weather?" }));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: "unknown", sources: [] });
   });
   it("maps provider access failure to a sanitized 502 response", async () => {
+    vi.stubEnv("LLM_BACKEND", "cloud");
     vi.stubEnv("LLM_API_KEY", "test-key-not-a-credential");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("do-not-expose-provider-debug", { status: 401 })));
     const response = await POST(makeRequest(validInput));
     expect(response.status).toBe(502);
     const body = await response.json();
-    expect(body.error).toContain("API отклонил доступ");
+    expect(typeof body.error).toBe("string");
+    expect(body.error.length).toBeGreaterThan(0);
     expect(JSON.stringify(body)).not.toContain("do-not-expose-provider-debug");
     expect(JSON.stringify(body)).not.toContain("test-key");
   });

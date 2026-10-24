@@ -1,73 +1,77 @@
-# Запуск на своём компьютере
+# Run Liniya on your computer
 
-## Windows: быстрый запуск
+## Windows
 
-1. Установите [Docker Desktop для Windows с официального сайта](https://docs.docker.com/desktop/setup/install/windows-install/). Выберите WSL 2 и Linux containers, выполните предлагаемые установщиком шаги и запустите Docker Desktop. Дождитесь готовности его движка.
-2. Распакуйте **предоставленный ZIP проекта** в отдельную папку. Node.js, Python и Git устанавливать не нужно.
-3. Запустите **`START_WINDOWS.cmd`** двойным щелчком и оставьте окно открытым на время подготовки. Первый запуск собирает приложение и загружает модели. После готовности всех голосовых компонентов скрипт сам откроет **http://localhost:3000** в браузере на вашем компьютере.
-4. Откройте «База знаний» → «Загрузить файл» и выберите свои инструкции в `.txt` или `.md`. Импорт заменяет демонстрационные материалы и очищает текущий диалог. Отдельные ответы можно добавить кнопкой «Добавить ответ».
-5. Проверьте вопросы в «Тестовом диалоге». Затем откройте «Голосовой диалог», начните разговор и разрешите браузеру микрофон. Для первого разговора удобнее наушники.
-6. Чтобы остановить приложение, запустите **`STOP_WINDOWS.cmd`**. Загруженные модели сохранятся для следующего запуска.
+1. Install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/), using WSL 2 and Linux containers. Start Docker Desktop and wait for its engine to be running.
+2. Extract the project ZIP into a folder. Node.js, Python and Git are not required on Windows.
+3. Double-click **`CONFIGURE_KEYS_WINDOWS.cmd`**. Paste your OpenAI key into the masked prompt and press Enter. The helper saves it in private `.env.local` and selects cloud mode; it never prints the value or puts it in a command argument. Blank input keeps a previously saved key.
+4. At the optional Boson prompt, paste your Boson key or press Enter to skip/keep the saved key. Without it the app uses an explicitly labelled English eSpeak test voice. OpenAI supplies answers; Boson supplies speech, so they use separate keys.
+5. Double-click **`START_WINDOWS.cmd`**. If the OpenAI key is missing, it opens the same masked setup helper automatically. Keep its window open during preparation. The first build installs dependencies and downloads approximately 150 MB of Whisper speech-recognition weights plus retrieval data. Cloud mode does not download or start Qwen.
+6. When the web interface is available, the script opens **http://localhost:3000** on your computer. Open **Knowledge base → Upload file** and choose your own `.txt` or `.md` instructions, or use **Add answer**. The knowledge base starts empty.
+7. Test your material in **Test chat**, then open **Voice conversation**, start a call and allow microphone access. All conversations use English. Headphones help reduce echo.
+8. To stop the app, double-click **`STOP_WINDOWS.cmd`**. Downloaded files remain in the Docker volume.
 
-Нужен компьютер с процессором Intel/AMD x86_64. Выделите Docker не менее **4 CPU и 10 GB RAM**; для всей машины желательно 16 GB RAM. На диске оставьте не менее **16 GB свободного места**, лучше 20 GB для первой сборки. GPU не нужен.
+The web interface can open while the cloud key is missing or the voice service is unavailable, so you can still edit your knowledge base. The voice panel reports the components that need attention. A running container or healthy web page does not prove that the OpenAI/Boson account is ready.
 
-В Linux-контейнере проверены запуск сервисов и первый голосовой ответ через настоящий аудиоканал. Полный браузерный сценарий в Docker пока не подтверждён. Полная браузерная проверка прошла при нативном запуске на Linux; физический Windows-компьютер и ваш микрофон ещё не проверены.
+Use an Intel/AMD x86_64 computer. Give Docker at least **4 CPU and 6 GB RAM**; 16 GB machine RAM is recommended. Leave **20 GB free disk space** for the initial image build and cache. No GPU is needed. Runtime model storage is much smaller than the previous local-Qwen version, but building the Python and Node dependencies still needs disk space.
 
-Всё приложение, распознавание и языковая модель работают на вашем компьютере. Публичный сайт, домен и ключ облачной LLM не нужны. Без ключа Boson используется тестовый голос eSpeak NG; это менее естественная речь.
+## Updating an existing Windows installation
 
-## Подготовка своих инструкций
+Run `STOP_WINDOWS.cmd` first. Download the latest ZIP from the repository's `mvp-windows` branch and replace the source files in your existing project folder, preserving private `.env.local`. Run `CONFIGURE_KEYS_WINDOWS.cmd` to set the cloud key, then `START_WINDOWS.cmd` to rebuild. Your Docker volume is retained. Old Qwen weights may remain in it, but cloud mode neither loads nor starts them. Do not delete the volume to upgrade.
 
-Сохраните текст в UTF-8. Например, файл `my-support.md`:
+Existing custom knowledge is retained by the browser migration. The old bundled fictional FAQ is removed. Export important knowledge before clearing browser data or switching browser/profile.
+
+For manual setup, copy `.env.example` to `.env.local`, enter `LLM_API_KEY` and optional `BOSON_API_KEY`, and keep the cloud defaults. Save the exact filename `.env.local`, not `.env.local.txt`. The masked helper uses standard Windows PowerShell commands; it does not change execution policy.
+
+## Your support information
+
+Save files in UTF-8. Markdown uses a heading for each question/topic followed by the verified answer:
 
 ```markdown
-## В какое время работает поддержка?
-Поддержка работает ежедневно с 9:00 до 18:00.
+## What are your support hours?
+Enter your company's actual support hours here.
 
-## Как связаться с компанией?
-Напишите на support@example.com.
+## How can customers contact support?
+Enter the verified support contact details here.
 ```
 
-Замените пример своими проверенными сведениями. Для `.txt` первая строка каждого блока — вопрос, следующие — ответ; блоки разделяются пустой строкой. Готовый пример также находится в `public/demo-faq.md`. PDF и DOCX пока не поддерживаются. База сохраняется в текущем браузере; кнопка экспорта позволяет сохранить копию.
+For `.txt`, each block starts with a question/title and its following lines contain the answer; separate blocks with blank lines. Import replaces the current knowledge base and clears the text conversation. You can also add and edit individual answers. PDF and DOCX are not supported. Limits: 100 entries, 200 characters per title, 4,000 per answer and 180,000 characters overall. Export a backup from the interface; permanent knowledge and text history currently live in this browser.
 
-## Запуск из терминала, macOS и Linux
+## Terminal, Linux and macOS
 
-Требуется Docker Desktop с Docker Compose v2.24+ для Windows/macOS либо Docker Engine с Compose v2.24+ для Linux. В терминале, открытом в распакованной папке проекта, выполните:
+Use Docker Compose v2.24+ (included in current Docker Desktop). Configure `.env.local` as above, then from the project folder run:
 
 ```bash
 docker compose up --build
 ```
 
-Первая сборка устанавливает зависимости; первый запуск загружает примерно 1.3 GB моделей из официальных репозиториев Hugging Face и проверяет их SHA256. Нужен интернет; первая подготовка может занять несколько минут. При повторном запуске веса используются из volume, но загрузчик всё ещё проверяет официальные метаданные через интернет. При запуске из терминала дождитесь сообщения `Starting the browser interface` и запуска Next.js, затем откройте **http://localhost:3000** на этом же компьютере. На странице «Голосовой диалог» дождитесь готовности компонентов, начните разговор и разрешите браузеру микрофон.
+Wait for `Starting the browser interface` and Next.js startup, then open **http://localhost:3000** on the same computer. Internet is needed for building, initial model downloads, cloud answers and Boson. Cached Whisper weights are reused, but setup still checks official Hugging Face metadata online. TLS, APT signatures and SHA256 checks remain enabled.
 
-Образ использует `linux/amd64`. На Intel/AMD он работает напрямую; на Apple Silicon Docker запускает его через эмуляцию, поэтому обработка голоса может быть ощутимо медленнее. Нативная ARM-сборка пока не подготовлена. Проверки Linux-контейнера не означают, что приложение проверено на физических Windows/macOS или с вашим микрофоном.
+The image is `linux/amd64`; Apple Silicon uses emulation and is not a native ARM build. A Linux-container check does not establish physical Windows/macOS microphone compatibility. The former Russian local-LLM end-to-end reports do not validate the new English cloud configuration.
 
-## Остановка и повторный запуск
-
-Нажмите `Ctrl+C` в терминале. Голосовые процессы остановятся вместе с контейнером. Для запуска в фоне и просмотра логов:
+To run in the background, inspect logs and stop:
 
 ```bash
 docker compose up -d --build
 docker compose logs -f
-```
-
-Остановить и убрать контейнер:
-
-```bash
 docker compose down
 ```
 
-Модели и локальные сгенерированные ключи остаются в Docker volume `local-data`; повторная загрузка весов не нужна. `docker compose down -v` удаляет этот volume, поэтому применяйте эту команду только для полного сброса. База знаний и текстовая история находятся в текущем браузере; для переноса экспортируйте базу через интерфейс.
+After changing `.env.local`, recreate the container:
 
-## Необязательный голос Boson
+```bash
+docker compose up -d --force-recreate
+```
 
-Если у вас есть ключ Boson, создайте в корне проекта файл `.env.local` и задайте там `BOSON_API_KEY=...`. Не публикуйте этот файл. Он исключён из Git и Docker build context; Compose передаёт его значения только запущенному серверу. После изменения выполните `docker compose up -d --force-recreate`. Реальный голос Boson требует интернета, подходящего тарифа и отдельной проверки совместимости аккаунта. Без ключа приложение работает с eSpeak.
+`docker compose down -v` deletes downloaded files and local server credentials; do not use it for an ordinary stop or update.
 
-## Если запуск не удался
+## Troubleshooting
 
-- `port is already allocated`: освободите порты 3000, 7880, 7881 и UDP 50000–50100, затем повторите запуск. Эти порты публикуются только на `127.0.0.1` вашего компьютера.
-- `Killed`, код 137 или контейнер перезапускается: увеличьте доступную Docker память до 10 GB и закройте тяжёлые приложения.
-- Ошибка загрузки: проверьте доступ к GitHub, PyPI, npm, Debian, Hugging Face и его CDN. Исправьте соединение и повторите запуск; скачанные файлы сохраняются. Проверку TLS, подписей APT и checksum отключать не нужно.
-- Нет микрофона: откройте именно `http://localhost:3000` на компьютере с Docker и проверьте разрешение микрофона в браузере/ОС. Обычный HTTP с другого компьютера не предоставляет браузерный микрофон.
-- Голосовые компоненты не готовы: выполните `docker compose exec liniya voice/.venv/bin/python scripts/voice-stack.py status`. Подробные логи находятся в контейнере `/app/.local/logs`; например `docker compose exec liniya tail -n 80 .local/logs/voice-worker.log`.
+- **The web interface opens but answers are unavailable:** check `LLM_API_KEY` in `.env.local`, your provider's billing/model permissions and the error shown in Test chat or Voice conversation. Recreate the container after editing the file. Keys are never sent to the browser. The question and retrieved knowledge excerpts are sent to the configured cloud LLM; spoken answer text is sent to Boson when enabled.
+- **`port is already allocated`:** free ports 3000, 7880, 7881 and UDP 50000–50100. Compose publishes them only on `127.0.0.1`.
+- **Exit 137 / `Killed`:** increase Docker's available memory and close other heavy programs.
+- **Model download stalls:** inspect `docker compose logs -f`; allow access to GitHub, Debian, npm, PyPI, Hugging Face and its CDN. Do not disable certificate or checksum verification.
+- **No microphone:** use `http://localhost:3000` on the Docker computer and allow microphone access in the browser and Windows settings. HTTP from another computer does not provide a browser microphone.
+- **Voice service not ready:** run `docker compose exec liniya voice/.venv/bin/python scripts/voice-stack.py status`. For worker logs use `docker compose exec liniya tail -n 80 .local/logs/voice-worker.log`.
 
-Внешний доступ не настроен: Compose ограничен локальным компьютером. Для проверки готовности веб-страницы достаточно `docker compose ps`; для готовности реального голосового стека используйте команду `status` выше.
+This is a local single-workspace MVP. Public hosting, telephone numbers, accounts and billing are not configured.

@@ -1,98 +1,67 @@
-# Линия — браузерный голосовой консультант поддержки
+# Liniya — English voice support over your knowledge base
 
-Прототип для разговора с агентом по базе знаний компании. Входящий телефонный номер для этого этапа не требуется: микрофон и звук работают в браузере через WebRTC.
+A browser support assistant for one workspace. Upload your own support information, test answers in text, then speak through the browser. The knowledge base starts empty; no fictional company data or suggested demo questions are seeded.
 
-**Для Windows:** скачайте и распакуйте исходники, установите Docker Desktop и запустите `START_WINDOWS.cmd`. Пошаговая инструкция, загрузка своих материалов и требования к компьютеру — в [LOCAL_RUN.md](LOCAL_RUN.md). Node.js и Python отдельно устанавливать не нужно.
+**Windows:** follow [LOCAL_RUN.md](LOCAL_RUN.md), run `CONFIGURE_KEYS_WINDOWS.cmd` for masked key entry, then `START_WINDOWS.cmd`. Docker Desktop must be running. Node.js and Python do not need to be installed on Windows.
 
-Готовые компоненты: **LiveKit Agents + LiveKit React** для разговора, **faster-whisper** для распознавания, **Silero VAD** для детекции речи, **LlamaIndex BM25 + PyStemmer** для поиска, **llama.cpp + Qwen2.5-1.5B** для ответов. **Boson** подключается как TTS. Без ключа Boson используется явно обозначенная тестовая речь eSpeak NG.
+The default pipeline is **LiveKit Agents / React → faster-whisper (English) → LlamaIndex BM25 → OpenAI-compatible cloud LLM → Boson TTS**. Without a Boson key, English eSpeak test speech is clearly labelled. OpenAI and Boson use separate keys. Cloud mode does not download or run Qwen/llama.cpp; local speech recognition still runs on your computer.
 
-## Текущее состояние
+## Cloud configuration
 
-Веса Qwen и Whisper установлены и проверены по SHA256; все сервисы загружаются. Настоящий компонентный прогон распознавание → поиск → локальная LLM → озвучка прошёл. Также прошёл разговор через LiveKit worker: гарантия 12 месяцев с источником, переключение на контакты, отказ для неизвестной модели и остановка ответа при перебивании (измерено 598 мс в одном прогоне). Для тестовых входных реплик используется нейроголос Piper Denis (CC0); исходящий тестовый голос остаётся eSpeak.
+Copy `.env.example` to ignored `.env.local` and fill in:
 
-Полная браузерная интеграционная проверка в Chromium при нативном запуске на Linux прошла: настоящий аудиоканал, распознавание вопроса, ответ и источник, воспроизведение ненулевого PCM ответа, mute, disconnect и освобождение обоих захваченных аудиотреков. Эти проверки используют настоящие модели и звук, но синтетический микрофон; физический микрофон человека, акустика помещения и реальный Boson ещё не проверены. Первый компонентный прогон на CPU: распознавание 1,23 с, генерация ответа 7,10 с. Задержка зависит от длины вопроса, ответа и нагрузки.
+```dotenv
+LLM_BACKEND=cloud
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4.1-mini
+LLM_API_KEY=YOUR_PRIVATE_KEY
+BOSON_API_KEY=
+```
 
-В Linux-контейнере проверены запуск всех сервисов и первый голосовой ответ через настоящий аудиоканал. Полный браузерный сценарий в Docker пока не подтверждён; физический Windows-компьютер ещё не проверен.
-
-## Установка и запуск
-
-Для запуска через Docker, включая Windows, используйте [LOCAL_RUN.md](LOCAL_RUN.md). Ниже приведён проверенный нативный путь для Debian Linux x86_64: Node.js 22.12+, Python 3.12, uv, Docker для первоначального получения официального бинарника LiveKit, APT с Debian archive keyring. В этой среде есть 5 CPU, 32 GB RAM и достаточно места; GPU не требуется. Используйте существующий checkout, Git worktree не нужен.
+Never commit keys or put them in browser code. Compose loads the file only at runtime; it is excluded from the image build context. A compatible provider/model may be configured through `LLM_BASE_URL` and `LLM_MODEL`, but it must support the structured response contract. Changing provider settings requires a service restart. The question and selected knowledge excerpts are sent to the cloud LLM. With Boson enabled, answer text is sent for speech synthesis.
 
 ```bash
-cd /workspace/blyat-aboson-ai
+docker compose up --build
+```
+
+First startup downloads approximately 150 MB of pinned Whisper weights and verified retrieval resources. It needs internet, and cached setup still checks official model metadata online. All TLS/signature/SHA256 checks stay enabled. The web health check measures web availability; the Voice conversation panel separately reports model, recognition, voice and RTC readiness. A missing cloud key does not prevent editing knowledge.
+
+## Using the app
+
+1. Open **Knowledge base**, upload your own UTF-8 `.md` / `.txt` file or choose **Add answer**.
+2. Check source-backed answers in **Test chat**.
+3. Open **Voice conversation**, wait for service readiness, start the conversation and allow microphone access. Speech recognition, greetings and answers use English.
+4. Export your knowledge for backup. The current prototype stores it and text history in this browser. Editing knowledge ends an active voice conversation.
+
+Markdown uses `## Question or topic` followed by its answer. TXT uses a title as the first line of each blank-line-separated block. Import replaces the current knowledge base. Limits: 100 entries, titles of 200 characters, answers of 4,000 characters and 180,000 total characters. PDF/DOCX are not yet supported. Uploaded material is retrieved as reference information; it does not fine-tune model weights.
+
+## Native Debian development
+
+Supported setup: Debian x86_64, Node.js 22.12+, Python 3.12, uv, Docker for obtaining the pinned LiveKit binary, and APT with the Debian archive keyring.
+
+```bash
 npm ci
-uv venv voice/.venv  # только если виртуального окружения ещё нет
+uv venv voice/.venv
 UV_CACHE_DIR=/tmp/liniya-uv-cache uv pip sync --python voice/.venv/bin/python voice/requirements.lock
 npm run voice:setup
 npm run build
 npm run mvp
 ```
 
-`voice:setup` получает llama.cpp из официального GitHub release с проверкой закреплённого SHA256, LiveKit из Docker-образа по digest, локальный eSpeak из подписанного Debian-репозитория, затем официальные модели. Повторная установка использует сохранённые файлы. Системные пакеты и TLS-настройки не изменяются. Версии Python-зависимостей закреплены в `voice/requirements.lock`; npm использует `package-lock.json`.
-
-Для моделей нужны разрешённые назначения Hugging Face и его серверов артефактов: `huggingface.co`, `us.aws.cdn.hf.co`, `cas-bridge.xethub.hf.co`, `cas-server.xethub.hf.co`, `transfer.xethub.hf.co`, `cdn-lfs.huggingface.co`, `cdn-lfs-us-1.hf.co`. Требования сохранены в черновик сетевых настроек. Сохранение черновика само по себе не применяет правила к машине. Не отключайте проверку сертификатов, подписей или checksum ради установки.
-
-Загрузчик использует штатный HTTPS-режим Hugging Face и сначала проверяет фактический адрес файла, чтобы блокировка CDN обнаруживалась сразу. Проверка SHA256 остаётся обязательной. При доступной сети `voice:models` получает официальные Qwen GGUF, faster-whisper base и Piper Denis для тестового входа; использует закреплённые ревизии из `voice/model-lock.json` и сохраняет состояние в `.local/models/manifest.json`, проверяет SHA256 крупных артефактов из официальных метаданных. Официальные NLTK-данные подготовлены для автономного запуска RAG и проверяются по `voice/nltk-lock.json`. Локальные веса остаются в `.local/models`; процессы не должны считаться сохранёнными вместе со snapshot.
-
-Обновить или восстановить модели и запустить сервисы:
+`voice:setup` installs verified NLTK resources, Whisper, LiveKit and eSpeak. Cloud mode skips the llama.cpp binary, Qwen and legacy Piper test fixtures. Model revisions/checksums are pinned in `voice/model-lock.json`; retrieval resources are pinned in `voice/nltk-lock.json`. Dependencies use `package-lock.json` and `voice/requirements.lock`. Runtime files, logs and model weights live under ignored `.local/`; locally generated LiveKit credentials are restricted to their owner.
 
 ```bash
-npm run voice:models
 npm run voice:up
 npm run voice:status
-voice/.venv/bin/python scripts/voice-conversation-check.py
-npm run voice:web
+npm run voice:down
+npm run voice:web-up
 ```
 
-Последняя команда запускает веб-интерфейс на порту 3000. `npm run mvp` объединяет `voice:up` и `voice:web`. Для изменения интерфейса: запустите сервисы через `voice:up`, затем `npm run dev`. Не используйте dev и production одновременно с одним каталогом `.next`; перед сборкой остановите свой веб-процесс.
+Use `npm run dev` after `voice:up` while editing. Do not run development and production Next.js with the same `.next` directory concurrently.
 
-Другие команды:
+Local Qwen is an explicit development option: set `LLM_BACKEND=local`, `LLM_BASE_URL=http://127.0.0.1:11434/v1` and `LLM_MODEL=qwen2.5:1.5b`, then run `voice:setup` to download it. `LLM_BACKEND=faq` is an extractive text test mode, not a cloud conversation.
 
-- `npm run voice:up` — запускает готовые локальные компоненты; при отсутствии весов сообщает об этом и оставляет статус неготовым.
-- `npm run voice:status` — проверяет компоненты, возвращает ненулевой код при `ready=false`.
-- `npm run voice:down` — останавливает только процессы этого проекта, записанные в `.local/pids`.
-- Логи — `.local/logs`. Сгенерированная локальная авторизация LiveKit — `.local/runtime.env`, файл исключён из Git и доступен владельцу.
-
-## Подключение Boson
-
-Задайте **`BOSON_API_KEY` на сервере**: в защищённых настройках окружения или игнорируемом `.env.local`. Не вставляйте ключ в браузер, исходники или чат. Для прокси-секрета разрешённое HTTPS-назначение — `api.boson.ai`; требование и домен сохранены в настройках.
-
-Параметры по умолчанию:
-
-```dotenv
-BOSON_BASE_URL=https://api.boson.ai/v1
-BOSON_MODEL=higgs-audio-v3-tts
-```
-
-`BOSON_VOICE` необязателен: задавайте только поддерживаемый вашим аккаунтом идентификатор. Без ключа работает технический голос eSpeak NG, он не выдаётся за Boson. После добавления ключа перезапустите свои голосовые сервисы и веб-процесс. Наличие ключа не означает, что аккаунт, тариф или аудиоформат проверены: нужен пробный реальный разговор. Адаптер использует `/audio/speech`, WAV и потоковую обработку ответа; отмена ответа закрывает запрос. Совместимость с реальным API пока проверена только HTTP-контрактными тестами.
-
-Локальный режим не требует облачного `LLM_API_KEY`. Если это старое требование осталось в черновике окружения, его можно удалить в редакторе настроек. Для альтернативного облачного LLM доступны `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, но это необязательный вариант. По умолчанию используется локальная Qwen, `LLM_BACKEND=local`.
-
-## Как пользоваться
-
-1. Откройте «База знаний», импортируйте `.md` / `.txt` либо отредактируйте 18 демо-FAQ вымышленной «ТехноЛинии».
-2. Проверьте вопросы в текстовом диалоге. Ответы языковой модели доступны только после загрузки и запуска локальных моделей.
-3. Откройте «Голосовой диалог». При готовых компонентах нажмите начало разговора и разрешите микрофон.
-4. Говорите обычным темпом; LiveKit управляет очередностью реплик и перебиваниями. Наушники уменьшают эхо. Расшифровка и источники появляются по реальным событиям сессии.
-5. При завершении или смене вкладки микрофон и соединение отключаются. Изменение знаний завершает текущий разговор.
-
-Пример документа — `public/demo-faq.md`. Формат Markdown:
-
-```markdown
-## Как связаться с поддержкой?
-
-Укажите действующие контакты вашей компании.
-
-## Какие условия гарантии?
-
-Укажите проверенные условия.
-```
-
-TXT: первая строка блока — заголовок, следующие — ответ; блоки отделены пустой строкой. Лимиты: 100 записей, 200 символов заголовка, 4000 символов ответа, суммарно 180000 символов. PDF/DOCX пока не поддерживаются. Текстовый интерфейс и знания сохраняются в текущем браузере; экспортируйте базу для переноса.
-
-Старый режим без языковой модели по-прежнему доступен: `LLM_BACKEND=faq npm run dev`. Он возвращает текст FAQ по лексическому совпадению и честно обозначен как поиск, а не свободный ИИ-диалог.
-
-## Проверки
+## Validation
 
 ```bash
 npm test
@@ -100,27 +69,14 @@ npm run voice:test
 npm run typecheck
 npm run build
 npm run test:e2e
-voice/.venv/bin/python scripts/voice-audio-check.py
-voice/.venv/bin/python scripts/voice-conversation-check.py
-voice/.venv/bin/python scripts/voice-worker-check.py
-node scripts/browser-voice-check.mjs
 ```
 
-- Серверные тесты проверяют поиск, неизвестные вопросы, контекст, валидацию, источник ответа, изоляцию временных комнат и границы выдаваемых JWT.
-- Playwright запускает отдельный сервер на порту 3100 в режиме FAQ. Проверяет импорт/редактор/историю/мобильную вёрстку, настоящий статус голосовых сервисов и отказ микрофона. Успешное соединение с голосовым агентом в браузерных тестах не имитируется.
-- `voice-audio-check.py` проверяет **настоящую** тестовую речь → WebRTC → ненулевой PCM → Silero; Whisper, LLM и Boson в эту проверку не входят.
-- `voice-conversation-check.py` требует все готовые компоненты и проверяет **настоящие** Piper-вопрос → Whisper → поиск → LLM → тестовую озвучку, включая неизвестную модель устройства. При отсутствующих весах возвращает код 2 и `passed:false`. Это не проверка реального микрофона, акустики, перебиваний или аккаунта Boson.
-- `voice-worker-check.py` проходит через настоящий API выдачи сессии, WebRTC, worker и модели; проверяет источники, озвучку, перебивание и смену темы. `browser-voice-check.mjs` отдельно проверяет интерфейс Chromium с синтетическим WAV-микрофоном, без подставных ответов.
-- Проверки синтетической речи отказываются выполнять платные вызовы, если обнаружено подключение Boson; не считайте отказ успешной проверкой.
+Unit and browser tests use controlled fixtures; they do not establish provider billing, physical microphone acoustics or real Boson behavior. For an explicitly authorized live cloud text check, start the app with your private key and run `SMOKE_ALLOW_CLOUD=1 npm run smoke` on Linux/macOS (PowerShell: `$env:SMOKE_ALLOW_CLOUD="1"; npm run smoke`). This sends short English test questions to the configured provider and may incur API charges; the fixtures are not added to your knowledge base.
 
-Для оценки качества на вашем оборудовании дополнительно проверьте разговор через физический микрофон, паузы и акустику. Серверные и синтетические интеграционные проверки этого не заменяют. Ссылки на источники сами по себе не гарантируют фактическую правильность модели; необходима оценка на документах бизнеса.
+The old `scripts/*voice*check*` synthetic-audio scripts are retained as legacy local diagnostics, disabled by default and not evidence for the English cloud release. Their former Russian Piper/local-Qwen results must not be reported as validation of this configuration. Evaluate English calls with your own microphone, actual company material, provider account and chosen voice before relying on it.
 
-## Доступ из другого компьютера
+## Deployment and scope
 
-Браузер разрешает микрофон на HTTPS либо локальной машине. Для размещённого приложения нужен доступный **WSS LiveKit**, корректный `LIVEKIT_PUBLIC_URL`, открытые ICE-порты либо TURN и HTTPS для веб-приложения. По умолчанию LiveKit привязан к loopback для локального теста. Домен, TLS и публичный доступ здесь не развернуты. Облачный onboarding-интерфейс не поддерживает ссылки на loopback-превью.
+Default Docker ports are bound to `127.0.0.1`. Another computer needs HTTPS for the web app, reachable WSS for LiveKit and correct ICE/TURN configuration. Public hosting and telephone routing are not deployed.
 
-## Границы
-
-Это MVP одного рабочего пространства без регистрации, оплаты и долговременной базы клиентов. Не публикуйте его как многопользовательский SaaS: для этого нужны авторизация, изоляция компаний, ограничения нагрузки и серверное хранение. Голосовые знания сохраняются отдельно по комнате в локальной SQLite с TTL один час; очистка выполняется при обращениях и закрытии worker. История аудиосессии в localStorage не записывается. Телефонные звонки в текущий этап не входят.
-
-Лицензии фреймворков, отдельных моделей и API различаются. Условия выбранной коммерческой версии Boson нужно подтвердить перед запуском бизнеса. Сведения в демо вымышлены и не являются инструкциями к реальному оборудованию.
+This is a single-workspace MVP without customer accounts, billing or durable multi-tenant server storage. Voice knowledge is isolated by room in local SQLite with a one-hour TTL. Sources help review an answer but do not guarantee factual correctness; evaluate retrieval and answers on your own support material. Model/framework/provider licenses and commercial Boson terms must be checked for the intended use.

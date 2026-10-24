@@ -43,13 +43,12 @@ def emit(value):
 
 
 def materials():
-    sections = (ROOT / "public" / "demo-faq.md").read_text(encoding="utf8").split("## ")
-    entries = []
-    for section in sections:
-        if section.strip():
-            title, content = section.strip().split("\n", 1)
-            entries.append({"id": f"faq-{len(entries) + 1}", "title": title, "content": content.strip()})
-    return entries
+    # Internal legacy diagnostics only; never seeded into the application.
+    return [
+        {"id": "faq-3", "title": "How do I contact support?", "content": "Email support@example.invalid."},
+        {"id": "faq-4", "title": "What is the warranty period?", "content": "The warranty period is 12 months from the date of purchase."},
+        {"id": "faq-7", "title": "Why is the router indicator red?", "content": "A red indicator means the router has not established an internet connection."},
+    ]
 
 
 async def speech_frames(text):
@@ -183,6 +182,9 @@ async def send_microphone(source, frames, *, initial_silence=0.1, trailing_silen
 
 
 async def main():
+    if os.environ.get("LLM_BACKEND", "cloud") != "local" or os.environ.get("VOICE_ALLOW_LEGACY_SYNTHETIC") != "1":
+        emit({"check": "legacy_synthetic_voice", "outcome": "blocked", "passed": False, "reason": "Legacy local-only diagnostic: not an English cloud acceptance check. Requires explicit LLM_BACKEND=local and VOICE_ALLOW_LEGACY_SYNTHETIC=1; never enables cloud calls."})
+        return 2
     if os.environ.get("BOSON_API_KEY"):
         emit({"check": "livekit_worker_conversation", "outcome": "setup_required", "passed": False, "reason": "This check is restricted to the local test voice and will not call Boson."})
         return 2

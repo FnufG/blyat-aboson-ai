@@ -1,28 +1,27 @@
-import { readFileSync } from "node:fs";
-import assert from "node:assert/strict";
-const base = process.env.SMOKE_BASE_URL || "http://127.0.0.1:3000";
-const sections = readFileSync(new URL("../public/demo-faq.md", import.meta.url), "utf8").split(/^## /m).filter((item) => item.trim());
-const knowledge = sections.map((section, index) => {
-  const [title, ...body] = section.trim().split("\n");
-  return { id: `faq-${index + 1}`, title, content: body.join("\n").trim() };
-});
-const statusResponse = await fetch(`${base}/api/status`);
-assert.equal(statusResponse.status, 200);
-const { mode } = await statusResponse.json();
-assert.ok(["local", "llm"].includes(mode));
-async function ask(question, history = []) {
-  const response = await fetch(`${base}/api/chat`, {
-    method: "POST", headers: { "Content-Type": "application/json", Origin: new URL(base).origin },
-    body: JSON.stringify({ question, history, knowledge })
-  });
-  assert.equal(response.status, 200, `Chat HTTP ${response.status}`);
+import assert from 'node:assert/strict';
+const base = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:3000';
+if (process.env.SMOKE_ALLOW_CLOUD !== '1') {
+  console.log(JSON.stringify({check:'text_smoke', outcome:'blocked', reason:'Set SMOKE_ALLOW_CLOUD=1 to authorize short requests to the configured model. Cloud API charges may apply.'}));
+  process.exit(2);
+}
+// Private validation data; never seeded into the application or browser storage.
+const knowledge = [
+  {id:'support-hours', title:'When is support available?', content:'Support is available Monday to Friday, 09:00 to 17:00 UTC.'},
+  {id:'support-contact', title:'How do I contact support?', content:'Email support@example.invalid. The usual response time is two working days.'}
+];
+const status = await fetch(`${base}/api/status`);
+assert.equal(status.status, 200);
+async function ask(question) {
+  const response = await fetch(`${base}/api/chat`, {method:'POST', headers:{'Content-Type':'application/json',Origin:new URL(base).origin}, body:JSON.stringify({question, history:[], knowledge}), signal:AbortSignal.timeout(90_000)});
+  assert.equal(response.status,200,`Chat HTTP ${response.status}`);
   return response.json();
 }
-const known = await ask("На роутере мигает красный индикатор");
-assert.equal(known.status, "answered");
-assert.ok(known.sources.some((source) => source.id === "faq-7"));
-assert.ok(known.answer.length > 0);
-const unknown = await ask("Как настроить роутер TL-999?");
-assert.equal(unknown.status, "unknown");
-assert.equal(unknown.sources.length, 0);
-console.log(`Smoke passed: ${mode} mode; known answer cites FAQ; unknown model abstains.`);
+const known = await ask('When is support available?');
+assert.equal(known.status,'answered');
+assert.equal(known.mode,'llm');
+assert.ok(known.sources.some(source=>source.id==='support-hours'));
+assert.match(known.answer,/09:00|9\s*(?:am|a\.m\.)/i);
+const unknown = await ask('What is the warranty period for the Zeta ZX999 device?');
+assert.equal(unknown.status,'unknown');
+assert.equal(unknown.sources.length,0);
+console.log(JSON.stringify({check:'english_text_smoke', passed:true, known_answer_cited:true, unknown_question_abstained:true}));

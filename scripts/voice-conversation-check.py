@@ -47,14 +47,12 @@ def emit(value):
 
 
 def knowledge():
-    content = (ROOT / "public" / "demo-faq.md").read_text(encoding="utf8")
-    entries = []
-    for section in content.split("## "):
-        if not section.strip():
-            continue
-        title, body = section.strip().split("\n", 1)
-        entries.append(KnowledgeEntry(id=f"faq-{len(entries) + 1}", title=title, content=body.strip()))
-    return entries
+    # Internal legacy diagnostics only; never seeded into the application.
+    return [
+        KnowledgeEntry(id="faq-3", title="How do I contact support?", content="Email support@example.invalid."),
+        KnowledgeEntry(id="faq-4", title="What is the warranty period?", content="The warranty period is 12 months from the date of purchase."),
+        KnowledgeEntry(id="faq-7", title="Why is the router indicator red?", content="A red indicator means the router has not established an internet connection."),
+    ]
 
 
 async def synthesize(text):
@@ -90,6 +88,9 @@ async def ready_stack():
 
 
 async def main():
+    if os.environ.get("LLM_BACKEND", "cloud") != "local" or os.environ.get("VOICE_ALLOW_LEGACY_SYNTHETIC") != "1":
+        emit({"check": "legacy_synthetic_voice", "outcome": "blocked", "passed": False, "reason": "Legacy local-only diagnostic: not an English cloud acceptance check. Requires explicit LLM_BACKEND=local and VOICE_ALLOW_LEGACY_SYNTHETIC=1; never enables cloud calls."})
+        return 2
     if os.environ.get("BOSON_API_KEY"):
         emit({"check": "local_stt_rag_llm_tts_pipeline", "outcome": "setup_required", "passed": False, "reason": "Эта проверка использует только локальную тестовую озвучку. При наличии Boson binding запуск отменён, чтобы не выполнять платный API-вызов."})
         return 2

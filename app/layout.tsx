@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Линия — ваш ИИ-оператор поддержки",
-  description: "Создайте базу знаний и проверьте ответы вашего будущего телефонного ИИ-оператора.",
+  title: "Liniya — your AI support agent",
+  description: "Add your company information and test your AI support agent in text and voice.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="ru"><body>{children}</body></html>;
+  return <html lang="en"><body>{children}</body></html>;
 }

@@ -28,7 +28,7 @@ class SessionStore:
         with self.connect() as db:
             db.execute("DELETE FROM sessions WHERE expires < ?", (time.time(),))
             if db.execute("SELECT count(*) FROM sessions").fetchone()[0] >= 100:
-                raise RuntimeError("Слишком много активных разговоров. Завершите старые сессии.")
+                raise RuntimeError("Too many active conversations. End existing sessions before starting a new one.")
             db.execute("INSERT INTO sessions VALUES (?, ?, ?)", (room, request.model_dump_json(), time.time() + SESSION_TTL))
         return room
 

@@ -20,11 +20,11 @@ async function readLimitedBody(request: Request): Promise<string> {
       bytes += value.byteLength;
       if (bytes > 1_000_000) { await reader.cancel(); throw new PayloadTooLarge(); }
       try { text += decoder.decode(value, { stream: true }); }
-      catch { await reader.cancel(); throw new InputError("Ожидается текст UTF-8."); }
+      catch { await reader.cancel(); throw new InputError("Expected UTF-8 text."); }
       if (text.length > 600_000) { await reader.cancel(); throw new PayloadTooLarge(); }
     }
     try { text += decoder.decode(); }
-    catch { throw new InputError("Ожидается текст UTF-8."); }
+    catch { throw new InputError("Expected UTF-8 text."); }
     return text;
   } finally { reader.releaseLock(); }
 }
@@ -41,22 +41,22 @@ export async function POST(request: Request) {
       } catch { allowedOrigin = false; }
     }
     if (!allowedOrigin) {
-      return NextResponse.json({ error: "Запрос с другого сайта запрещён." }, { status: 403 });
+      return NextResponse.json({ error: "Cross-site requests are not allowed." }, { status: 403 });
     }
     if (!request.headers.get("content-type")?.includes("application/json")) {
-      return NextResponse.json({ error: "Ожидается JSON." }, { status: 415 });
+      return NextResponse.json({ error: "Expected JSON." }, { status: 415 });
     }
     const body = await readLimitedBody(request);
-    if (body.length > 600_000) return NextResponse.json({ error: "Документ слишком большой." }, { status: 413 });
+    if (body.length > 600_000) return NextResponse.json({ error: "The document is too large." }, { status: 413 });
     let data: unknown;
-    try { data = JSON.parse(body); } catch { throw new InputError("Некорректный JSON."); }
+    try { data = JSON.parse(body); } catch { throw new InputError("Invalid JSON."); }
     const input = parseChatRequest(data);
     const answer = await answerQuestion(input);
     return NextResponse.json(answer, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (error instanceof PayloadTooLarge) return NextResponse.json({ error: "Документ слишком большой." }, { status: 413 });
+    if (error instanceof PayloadTooLarge) return NextResponse.json({ error: "The document is too large." }, { status: 413 });
     if (error instanceof InputError) return NextResponse.json({ error: error.message }, { status: 400 });
     if (error instanceof ProviderError) return NextResponse.json({ error: error.message }, { status: 502 });
-    return NextResponse.json({ error: "Не удалось обработать вопрос. Попробуйте ещё раз." }, { status: 500 });
+    return NextResponse.json({ error: "Could not process the question. Please try again." }, { status: 500 });
   }
 }

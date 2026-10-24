@@ -1,62 +1,50 @@
-# Что сейчас представляет собой «Линия»
+# What Liniya contains
 
-Это работающий браузерный прототип голосовой техподдержки для одного рабочего пространства. Исходники подготовлены для передачи через репозиторий FnufG/blyat-aboson-ai. Публичный сайт приложения не развёрнут; локальный запуск описан в LOCAL_RUN.md.
+Liniya is an English browser-based support assistant for one workspace. It starts with an empty knowledge base and uses your uploaded information for answers. Source files are in the `FnufG/blyat-aboson-ai` repository; a public hosted application has not been deployed.
 
-## Что уже есть
+## Available functions
 
-- «База знаний»: импорт TXT/Markdown, добавление и редактирование ответов, экспорт.
-- «Тестовый диалог»: вопросы текстом, ответы по документам и источники.
-- «Голосовой диалог»: микрофон, распознавание, ответ голосом, расшифровка, перебивания и завершение разговора.
-- 18 демонстрационных FAQ вымышленной компании. Их можно заменить своими.
-- Локальные Whisper и Qwen; для них облачные API-ключи не нужны.
-- Подготовленный адаптер Boson. Пока без защищённой привязки BOSON_API_KEY используется обозначенный тестовый голос.
+- **Knowledge base:** import UTF-8 TXT/Markdown, add/edit/delete entries and export a backup.
+- **Test chat:** English answers with supporting sources from your material.
+- **Voice conversation:** browser microphone, English recognition, cloud answers, speech playback, transcripts and disconnect/mute controls.
+- **Cloud LLM:** OpenAI-compatible answer generation; `LLM_API_KEY` stays on the server.
+- **Speech:** local Whisper recognition; Boson output when configured, otherwise labelled English eSpeak test speech.
 
-Это не многопользовательский SaaS: регистрации компаний, оплаты и долговременного хранения данных компаний на сервере пока нет. Постоянная база знаний и текстовый диалог хранятся в текущем браузере, временные знания голосовых комнат — в локальной SQLite.
+This is not yet a multi-company SaaS: registration, subscriptions and durable company accounts are not implemented. Knowledge and text history live in the current browser; temporary voice-room knowledge is isolated in local SQLite.
 
-## Где находятся файлы
+## Files
 
 ```text
-app/             страницы, стили и HTTP-маршруты Next.js
-components/      голосовая панель браузера
-lib/             форматы знаний, поиск, проверка запросов, связь с голосовым сервисом
-voice/           Python API, LiveKit worker, STT/TTS и генерация ответов
-voice/tests/     проверки Python-сервиса
-scripts/         установка, запуск и реальные голосовые проверки
-public/          пример FAQ для импорта
-tests/           серверные и браузерные проверки
-Dockerfile       сборка локального приложения
-compose.yaml     запуск всех сервисов через Docker
-START_WINDOWS.cmd запуск на Windows
-STOP_WINDOWS.cmd остановка на Windows
-LOCAL_RUN.md     короткая инструкция для своего компьютера
-README.md        подробная установка, ограничения и команды
-.env.example     имена настроек без ключей
+app/               Next.js pages, styles and HTTP routes
+components/        LiveKit browser voice panel
+lib/               knowledge validation, retrieval and service adapters
+voice/             Python API, LiveKit worker, STT/TTS and cloud answers
+voice/tests/       backend tests
+scripts/           dependency setup, process lifecycle and diagnostics
+tests/             application and browser tests
+Dockerfile         reproducible local container build
+compose.yaml       local service launch
+CONFIGURE_KEYS_WINDOWS.cmd  masked API-key setup
+START_WINDOWS.cmd  Windows startup
+STOP_WINDOWS.cmd   Windows stop
+LOCAL_RUN.md       local setup and cloud key instructions
+.env.example       settings template containing no real credentials
 ```
 
-Папки `.local/`, `node_modules/`, `voice/.venv/` и `.next/` содержат скачанные модели, зависимости, сборку и локальное состояние. Они не входят в архив исходников. Секреты и сгенерированные локальные ключи тоже не входят в архив.
+`.local/`, `node_modules/`, `voice/.venv/` and `.next/` are runtime/dependency folders and are not source distribution contents. API keys are not distributed with the project.
 
-## Как получить доступ к интерфейсу
+## Open the interface
 
-Веб-приложение и голосовые сервисы подготовлены в облачном окружении; их можно запускать локально по инструкции. Само наличие исходников в GitHub или публикация окружения Codex не создаёт публичный сайт.
+Use [LOCAL_RUN.md](LOCAL_RUN.md): install/start Docker Desktop, run `CONFIGURE_KEYS_WINDOWS.cmd` to enter your private OpenAI key, then double-click `START_WINDOWS.cmd`. After preparation the script opens http://localhost:3000 on your computer. Physical Windows microphone and provider-account behavior still need evaluation on your machine.
 
-Есть два пути:
+Open **Knowledge base → Upload file** for `.txt` or `.md`, or choose **Add answer**. Markdown sections use `## Question` followed by the answer. Import replaces the current knowledge and clears the text conversation. Test the material in text before starting a new voice conversation.
 
-1. **Локальный запуск.** Скачать исходники и установить Docker Desktop. Для Windows подготовлен START_WINDOWS.cmd: он собирает и запускает Linux-контейнер с зависимостями и моделями, затем открывает интерфейс на своём компьютере. Подробности — в LOCAL_RUN.md. Windows-скрипт подготовлен для Intel/AMD; проверка контейнера на Linux не равна проверке физического Windows-компьютера.
-2. **Размещение на сервере.** Настроить доступный веб-адрес с HTTPS и LiveKit с WSS/ICE либо TURN. После этого интерфейс можно открывать по ссылке. Потребуются выбранный сервер/хостинг и его настройки; такое размещение ещё не выполнено.
-
-В уже подготовленном облачном окружении повторный запуск выполняется так:
+For a prepared native cloud workspace, restart with:
 
 ```bash
-cd /workspace/blyat-aboson-ai
 npm run voice:up
 npm run voice:web-up
 npm run voice:status
 ```
 
-Эти команды относятся к терминалу облачного окружения. Адрес внутри него не является публичной ссылкой для вашего компьютера.
-
-## Как загрузить свои данные после открытия интерфейса
-
-Откройте «База знаний» → «Загрузить файл» и выберите `.txt` или `.md`. Для Markdown используйте разделы `## Вопрос`, затем ответ. Либо нажмите «Добавить ответ» и заполните поля вручную. Импорт заменяет текущую базу и очищает текущий диалог. Затем откройте текстовый или голосовой раздел.
-
-Пока внешний доступ не настроен, материалы можно передать в чат: они могут быть преобразованы в базу знаний и проверены через сервер отдельно от браузерного интерфейса.
+These commands run inside that workspace; its internal localhost address is not a public site URL.

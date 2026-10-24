@@ -6,7 +6,7 @@ const livekitUrl = () => process.env.LIVEKIT_URL || "ws://127.0.0.1:7880";
 function credentials() {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
-  if (!apiKey || !apiSecret) throw new Error("Сервис разговора не настроен: запустите npm run voice:up.");
+  if (!apiKey || !apiSecret) throw new Error("The conversation service is not configured. Run npm run voice:up.");
   return { apiKey, apiSecret };
 }
 
@@ -18,26 +18,26 @@ export async function voiceStatus() {
     const components = health.components || {};
     const required = ["llm", "stt", "vad", "tts", "livekit", "worker"];
     const missing = required.filter((name) => components[name]?.ready !== true)
-      .map((name) => `${name}: ${String(components[name]?.reason || components[name]?.detail || "не готов")}`);
+      .map((name) => `${name}: ${String(components[name]?.reason || components[name]?.detail || "not ready")}`);
     const configured = Boolean(process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET);
-    if (!configured) missing.push("Не настроено подключение к LiveKit");
-    return { ready: health.ready === true && configured && missing.length === 0, missing, ttsProvider: health.ttsMode === "boson" ? "boson" : "test", details: health.ready ? "Готов к разговору. Распознавание и ответы работают локально." : "Сервисы голоса ещё не готовы. Проверьте список ниже.", components };
+    if (!configured) missing.push("LiveKit connection is not configured");
+    return { ready: health.ready === true && configured && missing.length === 0, missing, ttsProvider: health.ttsMode === "boson" ? "boson" : "test", details: health.ready ? "Ready for an English conversation. Speech recognition is local; answers use the configured language model." : "Voice services are not ready yet. Check the list below.", components };
   } catch {
-    return { ready: false, missing: ["Голосовой сервис не запущен. Выполните npm run voice:up."], ttsProvider: process.env.BOSON_API_KEY ? "boson" : "test", details: "Текстовый чат остаётся доступен." };
+    return { ready: false, missing: ["Voice services are not running. Run npm run voice:up."], ttsProvider: process.env.BOSON_API_KEY ? "boson" : "test", details: "The knowledge editor remains available." };
   }
 }
 
 export async function createVoiceSession(knowledge: KnowledgeEntry[], requestUrl: string, requestHost?: string | null) {
   const { apiKey, apiSecret } = credentials();
   const status = await voiceStatus();
-  if (!status.ready) throw new Error("Голосовой сервис не готов: " + status.missing.join("; "));
+  if (!status.ready) throw new Error("Voice services are not ready: " + status.missing.join("; "));
   const response = await fetch(`${voiceApiUrl()}/sessions`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ knowledge: knowledge.map(({ id, title, content }) => ({ id, title, content })), language: "ru" }), signal: AbortSignal.timeout(15_000)
+    body: JSON.stringify({ knowledge: knowledge.map(({ id, title, content }) => ({ id, title, content })), language: "en" }), signal: AbortSignal.timeout(15_000)
   });
-  if (!response.ok) throw new Error("Не удалось подготовить знания для разговора.");
+  if (!response.ok) throw new Error("Could not prepare knowledge for the conversation.");
   const session = await response.json();
-  if (!/^liniya-[A-Za-z0-9_-]{16,80}$/.test(session.roomName)) throw new Error("Сервис вернул некорректную комнату.");
+  if (!/^liniya-[A-Za-z0-9_-]{16,80}$/.test(session.roomName)) throw new Error("The service returned an invalid room.");
   const server = new URL(livekitUrl());
   server.protocol = server.protocol === "wss:" ? "https:" : "http:";
   const rooms = new RoomServiceClient(server.origin, apiKey, apiSecret);
@@ -58,6 +58,6 @@ export async function createVoiceSession(knowledge: KnowledgeEntry[], requestUrl
       rooms.deleteRoom(session.roomName),
       fetch(`${voiceApiUrl()}/sessions/${session.roomName}`, { method: "DELETE", signal: AbortSignal.timeout(3_000) })
     ]);
-    throw new Error("Не удалось подключить агента. Проверьте LiveKit и журнал голосового сервиса.");
+    throw new Error("Could not connect the agent. Check LiveKit and the voice service logs.");
   }
 }

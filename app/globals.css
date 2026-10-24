@@ -107,3 +107,5 @@
 .voice-answer-sources details p{font-size:13px;line-height:1.8;color:#667f53;white-space:pre-wrap;margin-top:10px}
 .voice-no-sources{font-size:11px;color:#8b9c7a;line-height:1.8}
 @media(max-width:760px){.voice-source-heading{align-items:flex-start;flex-direction:column;gap:6px}.voice-answer-sources summary{font-size:13px}.voice-no-sources{font-size:12px}}
+
+.empty-knowledge-link{font-size:12px;margin:14px 0 4px;white-space:normal;text-align:left}
